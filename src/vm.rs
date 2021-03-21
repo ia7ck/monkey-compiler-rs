@@ -68,9 +68,11 @@ impl<'a> VM<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{Node, Operator};
+    use crate::ast::Program;
     use crate::compiler::Compiler;
+    use crate::lexer::Lexer;
     use crate::object::Object;
+    use crate::parser::Parser;
     use crate::vm::VM;
     use anyhow::{bail, Result};
 
@@ -116,22 +118,10 @@ mod tests {
         }
     }
 
-    fn parse(input: &str) -> Node {
-        use Node::*;
-        if input == "1" {
-            return IntegerLiteral { value: 1 };
-        }
-        if input == "2" {
-            return IntegerLiteral { value: 2 };
-        }
-        if input == "1 + 2" {
-            return InfixExpression {
-                left: Box::new(IntegerLiteral { value: 1 }),
-                operator: Operator::Plus,
-                right: Box::new(IntegerLiteral { value: 2 }),
-            };
-        }
-        todo!()
+    fn parse(input: &str) -> Program {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        parser.parse().unwrap()
     }
 
     fn test_expected_object(expected: &Object, actual: &Object) {

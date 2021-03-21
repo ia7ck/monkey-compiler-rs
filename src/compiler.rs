@@ -1,4 +1,4 @@
-use crate::ast::{Node, Operator};
+use crate::ast::{Expression, Operator, Program, Statement};
 use crate::code::{make, Instructions, Opcode};
 use crate::object::Object;
 use anyhow::Result;
@@ -15,22 +15,40 @@ impl Compiler {
             constants: vec![],
         }
     }
-    pub fn compile(&mut self, node: Node) -> Result<()> {
-        use Node::*;
+    pub fn compile(&mut self, program: Program) -> Result<()> {
+        for stmt in program.statements {
+            self.compile_statement(stmt)?;
+        }
+        Ok(())
+    }
+    fn compile_statement(&mut self, statement: Statement) -> Result<()> {
+        use Statement::*;
+        match statement {
+            ExpressionStatement(exp) => {
+                self.compile_expression(exp)?;
+            }
+        }
+        Ok(())
+    }
+    fn compile_expression(&mut self, expression: Expression) -> Result<()> {
+        use Expression::*;
         use Object::*;
         use Opcode::*;
         use Operator::*;
-        match node {
+        match expression {
             InfixExpression {
                 left,
                 operator,
                 right,
             } => {
-                self.compile(*left)?;
-                self.compile(*right)?;
+                self.compile_expression(*left)?;
+                self.compile_expression(*right)?;
                 match operator {
-                    Plus => {
+                    PLUS => {
                         self.emit(OpAdd, &[]);
+                    }
+                    _ => {
+                        todo!()
                     }
                 }
             }
@@ -70,11 +88,13 @@ pub struct Bytecode<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{Node, Operator};
+    use crate::ast::Program;
     use crate::code::Opcode;
     use crate::code::{make, Instructions};
     use crate::compiler::Compiler;
+    use crate::lexer::Lexer;
     use crate::object::Object;
+    use crate::parser::Parser;
     use anyhow::{bail, Result};
 
     enum Constant {
@@ -115,16 +135,10 @@ mod tests {
         }
     }
 
-    fn parse(input: &str) -> Node {
-        use Node::*;
-        if input == "1 + 2" {
-            return InfixExpression {
-                left: Box::new(Node::IntegerLiteral { value: 1 }),
-                operator: Operator::Plus,
-                right: Box::new(Node::IntegerLiteral { value: 2 }),
-            };
-        }
-        todo!()
+    fn parse(input: &str) -> Program {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        parser.parse().unwrap()
     }
 
     fn test_instructions(expected: &[Instructions], actual: &Instructions) {

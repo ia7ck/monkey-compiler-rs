@@ -1,31 +1,19 @@
-use crate::ast::Node;
-use crate::ast::Operator;
+use crate::ast::Program;
 use crate::compiler::Compiler;
+use crate::lexer::Lexer;
+use crate::parser::Parser;
 use crate::vm::VM;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::io;
 use std::io::Write;
 
 const PROMPT: &'static str = ">> ";
 
 pub fn start() {
-    fn parse_program(input: &str) -> Result<Node> {
-        use Node::*;
-        use Operator::*;
-        if input == "1" {
-            return Ok(IntegerLiteral { value: 1 });
-        }
-        if input == "2" {
-            return Ok(IntegerLiteral { value: 2 });
-        }
-        if input == "1 + 2" {
-            return Ok(InfixExpression {
-                left: Box::new(IntegerLiteral { value: 1 }),
-                operator: Plus,
-                right: Box::new(IntegerLiteral { value: 2 }),
-            });
-        }
-        bail!("not implemented yet")
+    fn parse_program(input: &str) -> Result<Program> {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        parser.parse()
     }
     loop {
         print!("{}", PROMPT);
