@@ -54,9 +54,6 @@ impl<'a> VM<'a> {
                     let left = self.pop();
                     let result = match (left, right) {
                         (Integer { value: left }, Integer { value: right }) => left + right,
-                        _ => {
-                            unreachable!()
-                        }
                     };
                     self.push(Integer { value: result })?;
                 }
@@ -129,6 +126,14 @@ mod tests {
             Object::Integer { value } => {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
+            }
+        }
+    }
+
+    impl Object {
+        pub fn r#type(&self) -> &'static str {
+            match self {
+                Object::Integer { .. } => "INTEGER",
             }
         }
     }

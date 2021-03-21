@@ -1,7 +1,6 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
-use crate::code::Opcode::{OpAdd, OpConstant};
 use anyhow::{anyhow, Result};
 use byteorder::{BigEndian, ByteOrder};
 use std::convert::TryFrom;
@@ -9,6 +8,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::iter::FromIterator;
 use std::ops::Index;
 
+#[derive(Debug)]
 pub struct Instructions(Vec<u8>);
 impl Instructions {
     pub fn new() -> Self {
@@ -54,11 +54,7 @@ impl Extend<u8> for Instructions {
         }
     }
 }
-impl Debug for Instructions {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
+
 impl Display for Instructions {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         fn fmt_instruction(def: &Definition, operands: &[usize]) -> String {
@@ -71,9 +67,7 @@ impl Display for Instructions {
                 );
             }
             match operand_count {
-                0 => {
-                    format!("{}", def.name)
-                }
+                0 => def.name.to_string(),
                 1 => {
                     format!("{} {}", def.name, operands[0])
                 }
@@ -85,10 +79,10 @@ impl Display for Instructions {
             match lookup(self.0[i]) {
                 Ok(def) => {
                     let (operands, read) = read_operands(def, self.rest(i + 1));
-                    write!(f, "{:04} {}\n", i, fmt_instruction(def, &operands))?;
+                    writeln!(f, "{:04} {}", i, fmt_instruction(def, &operands))?;
                     i += 1 + read;
                 }
-                Err(err) => return write!(f, "ERROR: {:?}\n", err),
+                Err(err) => return writeln!(f, "ERROR: {:?}", err),
             }
         }
         Ok(())
@@ -103,6 +97,7 @@ pub enum Opcode {
 impl TryFrom<u8> for Opcode {
     type Error = &'static str;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
+        use Opcode::*;
         match value {
             0 => Ok(OpConstant),
             1 => Ok(OpAdd),
