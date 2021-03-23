@@ -119,6 +119,7 @@ mod tests {
                     make(OpConstant, &[0]),
                     make(OpConstant, &[1]),
                     make(OpAdd, &[]),
+                    make(OpPop, &[]),
                 ],
             },
             CompilerTestCase {
