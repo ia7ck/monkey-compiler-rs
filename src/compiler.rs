@@ -26,6 +26,7 @@ impl Compiler {
         match statement {
             ExpressionStatement(exp) => {
                 self.compile_expression(exp)?;
+                self.emit(Opcode::OpPop, &[]);
             }
         }
         Ok(())
@@ -110,15 +111,27 @@ mod tests {
     fn test_integer_arithmetic() {
         use Constant::*;
         use Opcode::*;
-        let tests = vec![CompilerTestCase {
-            input: "1 + 2",
-            expected_constants: vec![Integer(1), Integer(2)],
-            expected_instructions: vec![
-                make(OpConstant, &[0]),
-                make(OpConstant, &[1]),
-                make(OpAdd, &[]),
-            ],
-        }];
+        let tests = vec![
+            CompilerTestCase {
+                input: "1 + 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpAdd, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1; 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpPop, &[]),
+                    make(OpConstant, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
         run_compiler_tests(&tests);
     }
 

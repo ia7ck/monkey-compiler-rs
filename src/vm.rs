@@ -9,8 +9,8 @@ const STACK_SIZE: usize = 2048;
 pub struct VM<'a> {
     instructions: &'a Instructions,
     constants: &'a [Object],
-
     stack: Vec<Object>,
+    last_popped: Option<Object>,
 }
 
 impl<'a> VM<'a> {
@@ -19,10 +19,16 @@ impl<'a> VM<'a> {
             instructions: bytecode.instructions,
             constants: bytecode.constants,
             stack: Vec::with_capacity(STACK_SIZE),
+            last_popped: None,
         }
     }
-    pub fn stack_top(&self) -> Option<&Object> {
-        self.stack.last()
+    pub fn last_popped_stack_elem(&self) -> Result<Object> {
+        match self.last_popped.as_ref() {
+            Some(obj) => Ok(obj.clone()),
+            None => {
+                bail!("there is no last popped stack element");
+            }
+        }
     }
     fn push(&mut self, obj: Object) -> Result<()> {
         if self.stack.len() >= STACK_SIZE {
@@ -31,8 +37,16 @@ impl<'a> VM<'a> {
         self.stack.push(obj);
         Ok(())
     }
-    fn pop(&mut self) -> Object {
-        self.stack.pop().unwrap()
+    fn pop(&mut self) -> Result<Object> {
+        match self.stack.pop() {
+            Some(obj) => {
+                self.last_popped = Some(obj.clone());
+                Ok(obj)
+            }
+            None => {
+                bail!("stack is empty");
+            }
+        }
     }
     pub fn run(&mut self) -> Result<()> {
         use Object::*;
@@ -50,12 +64,16 @@ impl<'a> VM<'a> {
                 }
                 OpAdd => {
                     ip += 1;
-                    let right = self.pop();
-                    let left = self.pop();
+                    let right = self.pop()?;
+                    let left = self.pop()?;
                     let result = match (left, right) {
                         (Integer { value: left }, Integer { value: right }) => left + right,
                     };
                     self.push(Integer { value: result })?;
+                }
+                OpPop => {
+                    ip += 1;
+                    self.pop()?;
                 }
             }
         }
@@ -73,34 +91,20 @@ mod tests {
     use crate::vm::VM;
     use anyhow::{bail, Result};
 
-    struct VMTestCase {
-        input: &'static str,
-        expected: Object,
-    }
-
     #[test]
     fn test_integer_arithmetic() {
         use Object::*;
         let tests = vec![
-            VMTestCase {
-                input: "1",
-                expected: Integer { value: 1 },
-            },
-            VMTestCase {
-                input: "2",
-                expected: Integer { value: 2 },
-            },
-            VMTestCase {
-                input: "1 + 2",
-                expected: Integer { value: 3 },
-            },
+            ("1", Integer { value: 1 }),
+            ("2", Integer { value: 2 }),
+            ("1 + 2", Integer { value: 3 }),
         ];
-        run_vm_tests(&tests);
+        run_vm_tests(tests);
     }
 
-    fn run_vm_tests(tests: &[VMTestCase]) {
-        for tt in tests {
-            let program = parse(tt.input);
+    fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
+        for (input, expected) in tests {
+            let program = parse(input);
             let mut compiler = Compiler::new();
             compiler
                 .compile(program)
@@ -108,10 +112,10 @@ mod tests {
             let bytecode = compiler.bytecode();
             let mut vm = VM::new(&bytecode);
             vm.run().unwrap_or_else(|err| panic!("vm error: {:?}", err));
-            let stack_elem = vm.stack_top().unwrap_or_else(|| {
-                panic!("stack is empty");
-            });
-            test_expected_object(&tt.expected, stack_elem);
+            let stack_elem = vm
+                .last_popped_stack_elem()
+                .unwrap_or_else(|err| panic!("{:?}", err));
+            test_expected_object(expected, stack_elem);
         }
     }
 
@@ -121,7 +125,7 @@ mod tests {
         parser.parse().unwrap()
     }
 
-    fn test_expected_object(expected: &Object, actual: &Object) {
+    fn test_expected_object(expected: Object, actual: Object) {
         match expected {
             Object::Integer { value } => {
                 test_integer_object(value, actual)
@@ -138,7 +142,7 @@ mod tests {
         }
     }
 
-    fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
+    fn test_integer_object(expected: i64, actual: Object) -> Result<()> {
         match actual {
             Object::Integer { value } => {
                 if expected != value {

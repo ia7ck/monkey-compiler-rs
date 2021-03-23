@@ -92,6 +92,7 @@ impl Display for Instructions {
 pub enum Opcode {
     OpConstant,
     OpAdd,
+    OpPop,
 }
 
 impl TryFrom<u8> for Opcode {
@@ -101,6 +102,7 @@ impl TryFrom<u8> for Opcode {
         match value {
             0 => Ok(OpConstant),
             1 => Ok(OpAdd),
+            2 => Ok(OpPop),
             _ => Err("not found opcode"),
         }
     }
@@ -125,6 +127,13 @@ static DEFINITIONS: Lazy<HashMap<u8, Definition>> = Lazy::new(|| {
         OpAdd as u8,
         Definition {
             name: "OpAdd",
+            operand_widths: vec![],
+        },
+    );
+    map.insert(
+        OpPop as u8,
+        Definition {
+            name: "OpPop",
             operand_widths: vec![],
         },
     );
