@@ -64,6 +64,13 @@ impl Compiler {
                 let operands = &[self.add_constant(integer)];
                 self.emit(OpConstant, operands);
             }
+            Expression::Boolean { value } => {
+                if value {
+                    self.emit(OpTrue, &[]);
+                } else {
+                    self.emit(OpFalse, &[]);
+                }
+            }
         }
         Ok(())
     }
@@ -167,6 +174,24 @@ mod tests {
                     make(OpDiv, &[]),
                     make(OpPop, &[]),
                 ],
+            },
+        ];
+        run_compiler_tests(&tests);
+    }
+
+    #[test]
+    fn test_boolean_expressions() {
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "true",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpTrue, &[]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "false",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpFalse, &[]), make(OpPop, &[])],
             },
         ];
         run_compiler_tests(&tests);

@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::token;
 use std::str::Chars;
 
 pub struct Lexer<'a> {
@@ -35,13 +35,21 @@ impl<'a> Lexer<'a> {
         }
         res
     }
+    fn read_identifier(&mut self) -> String {
+        let mut res = String::new();
+        while self.cur.map_or(false, |c| c.is_ascii_alphabetic()) {
+            res.push(self.cur.unwrap());
+            self.read_char();
+        }
+        res
+    }
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Token;
+    type Item = token::Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use Token::*;
+        use token::Token::*;
         self.skip_whitespace();
         let c = self.cur?;
         let token = match c {
@@ -74,6 +82,10 @@ impl<'a> Iterator for Lexer<'a> {
                 RPAREN
             }
             c if c.is_ascii_digit() => INT(self.read_number()),
+            c if c.is_ascii_alphabetic() => {
+                let literal = self.read_identifier();
+                token::lookup_identifier(&literal)
+            }
             c => {
                 self.read_char();
                 ILLEGAL(c)
@@ -92,7 +104,8 @@ mod tests {
     #[test]
     fn test_next_token() {
         let input = r#"1 + 2;
-34 * (5 + 6)"#;
+34 * (5 + 6);
+true; false"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -105,6 +118,10 @@ mod tests {
             PLUS,
             INT("6".to_string()),
             RPAREN,
+            SEMICOLON,
+            TRUE,
+            SEMICOLON,
+            FALSE,
         ];
         let lexer = Lexer::new(input);
         let tokens: Vec<Token> = lexer.collect();

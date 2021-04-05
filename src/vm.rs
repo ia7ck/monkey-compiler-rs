@@ -7,6 +7,9 @@ use std::convert::TryFrom;
 
 const STACK_SIZE: usize = 2048;
 
+const TRUE: Object = Object::Boolean { value: true };
+const FALSE: Object = Object::Boolean { value: false };
+
 pub struct VM<'a> {
     instructions: &'a Instructions,
     constants: &'a [Object],
@@ -70,6 +73,14 @@ impl<'a> VM<'a> {
                     self.execute_binary_operation(op)?;
                     ip += 1;
                 }
+                OpTrue => {
+                    self.push(TRUE)?;
+                    ip += 1;
+                }
+                OpFalse => {
+                    self.push(FALSE)?;
+                    ip += 1;
+                }
             }
         }
         Ok(())
@@ -81,6 +92,13 @@ impl<'a> VM<'a> {
         match (left, right) {
             (Integer { value: left }, Integer { value: right }) => {
                 self.execute_binary_integer_operation(op, left, right)?;
+            }
+            (left, right) => {
+                bail!(
+                    "unsupported types for binary operation {} {}",
+                    left.r#type(),
+                    right.r#type()
+                );
             }
         };
         Ok(())
@@ -114,7 +132,7 @@ mod tests {
     use crate::object::Object;
     use crate::parser::Parser;
     use crate::vm::VM;
-    use anyhow::{bail, Result};
+    use anyhow::{bail, ensure, Result};
 
     #[test]
     fn test_integer_arithmetic() {
@@ -135,6 +153,16 @@ mod tests {
         let tests = tests
             .into_iter()
             .map(|(input, value)| (input, Object::Integer { value }))
+            .collect();
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_boolean_expressions() {
+        let tests = vec![("true", true), ("false", false)];
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::Boolean { value }))
             .collect();
         run_vm_tests(tests);
     }
@@ -163,18 +191,15 @@ mod tests {
     }
 
     fn test_expected_object(expected: Object, actual: Object) {
+        use Object::*;
         match expected {
-            Object::Integer { value } => {
+            Integer { value } => {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
             }
-        }
-    }
-
-    impl Object {
-        pub fn r#type(&self) -> &'static str {
-            match self {
-                Object::Integer { .. } => "INTEGER",
+            Boolean { value } => {
+                test_boolean_object(value, actual)
+                    .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
             }
         }
     }
@@ -192,6 +217,27 @@ mod tests {
                     actual.r#type(),
                     actual
                 );
+            }
+        }
+        Ok(())
+    }
+
+    fn test_boolean_object(expected: bool, actual: Object) -> Result<()> {
+        match actual {
+            Object::Boolean { value } => {
+                ensure!(
+                    expected == value,
+                    "object has wrong value. want={}, got={}",
+                    expected,
+                    value
+                );
+            }
+            _ => {
+                bail!(
+                    "object is not Boolean. got={} ({:?})",
+                    actual.r#type(),
+                    actual
+                )
             }
         }
         Ok(())

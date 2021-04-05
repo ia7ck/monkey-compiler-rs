@@ -13,6 +13,9 @@ pub enum Expression {
     IntegerLiteral {
         value: i64,
     },
+    Boolean {
+        value: bool,
+    },
     InfixExpression {
         left: Box<Expression>,
         operator: Operator,

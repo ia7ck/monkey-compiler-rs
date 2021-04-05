@@ -14,4 +14,16 @@ pub enum Token {
 
     LPAREN, // (
     RPAREN, // )
+
+    TRUE,
+    FALSE,
+}
+
+pub fn lookup_identifier(ident: &str) -> Token {
+    use Token::*;
+    match ident {
+        "true" => TRUE,
+        "false" => FALSE,
+        _ => todo!(),
+    }
 }

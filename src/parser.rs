@@ -24,6 +24,8 @@ impl Token {
             SEMICOLON => LOWEST,
             LPAREN => CALL,
             RPAREN => LOWEST,
+            TRUE => LOWEST,
+            FALSE => LOWEST,
         }
     }
 }
@@ -88,6 +90,8 @@ impl<'a> Parser<'a> {
                 IntegerLiteral { value }
             }
             LPAREN => self.parse_grouped_expression()?,
+            TRUE => Boolean { value: true },
+            FALSE => Boolean { value: false },
             _ => {
                 bail!("cannot parse: {:?}", self.cur);
             }
@@ -182,6 +186,9 @@ mod tests {
             use Expression::*;
             match self {
                 IntegerLiteral { value } => {
+                    write!(f, "{}", value)
+                }
+                Boolean { value } => {
                     write!(f, "{}", value)
                 }
                 InfixExpression {
