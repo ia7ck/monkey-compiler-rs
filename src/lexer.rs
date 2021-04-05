@@ -53,6 +53,16 @@ impl<'a> Iterator for Lexer<'a> {
         self.skip_whitespace();
         let c = self.cur?;
         let token = match c {
+            '=' => {
+                self.read_char();
+                match self.cur {
+                    Some(c) if c == '=' => {
+                        self.read_char();
+                        EQ
+                    }
+                    _ => todo!(),
+                }
+            }
             '+' => {
                 self.read_char();
                 PLUS
@@ -61,6 +71,16 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 MINUS
             }
+            '!' => {
+                self.read_char();
+                match self.cur {
+                    Some(c) if c == '=' => {
+                        self.read_char();
+                        NEQ
+                    }
+                    _ => todo!(),
+                }
+            }
             '*' => {
                 self.read_char();
                 ASTERISK
@@ -68,6 +88,14 @@ impl<'a> Iterator for Lexer<'a> {
             '/' => {
                 self.read_char();
                 SLASH
+            }
+            '<' => {
+                self.read_char();
+                LT
+            }
+            '>' => {
+                self.read_char();
+                GT
             }
             ';' => {
                 self.read_char();
@@ -105,7 +133,8 @@ mod tests {
     fn test_next_token() {
         let input = r#"1 + 2;
 34 * (5 + 6);
-true; false"#;
+true; false;
+1 == 1; 2 != 3; 1 < 2; 2 > 1"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -122,6 +151,22 @@ true; false"#;
             TRUE,
             SEMICOLON,
             FALSE,
+            SEMICOLON,
+            INT("1".to_string()),
+            EQ,
+            INT("1".to_string()),
+            SEMICOLON,
+            INT("2".to_string()),
+            NEQ,
+            INT("3".to_string()),
+            SEMICOLON,
+            INT("1".to_string()),
+            LT,
+            INT("2".to_string()),
+            SEMICOLON,
+            INT("2".to_string()),
+            GT,
+            INT("1".to_string()),
         ];
         let lexer = Lexer::new(input);
         let tokens: Vec<Token> = lexer.collect();

@@ -42,6 +42,12 @@ impl Compiler {
                 operator,
                 right,
             } => {
+                let (left, right) = if operator == LT {
+                    // swap
+                    (right, left)
+                } else {
+                    (left, right)
+                };
                 self.compile_expression(*left)?;
                 self.compile_expression(*right)?;
                 match operator {
@@ -56,6 +62,15 @@ impl Compiler {
                     }
                     SLASH => {
                         self.emit(OpDiv, &[]);
+                    }
+                    LT | GT => {
+                        self.emit(OpGreaterThan, &[]);
+                    }
+                    EQ => {
+                        self.emit(OpEqual, &[]);
+                    }
+                    NEQ => {
+                        self.emit(OpNotEqual, &[]);
                     }
                 }
             }
@@ -181,6 +196,7 @@ mod tests {
 
     #[test]
     fn test_boolean_expressions() {
+        use Constant::*;
         use Opcode::*;
         let tests = vec![
             CompilerTestCase {
@@ -192,6 +208,46 @@ mod tests {
                 input: "false",
                 expected_constants: vec![],
                 expected_instructions: vec![make(OpFalse, &[]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "1 > 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpGreaterThan, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 < 2",
+                expected_constants: vec![Integer(2), Integer(1)], // !!!
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpGreaterThan, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 == 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpEqual, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 != 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpNotEqual, &[]),
+                    make(OpPop, &[]),
+                ],
             },
         ];
         run_compiler_tests(&tests);

@@ -81,6 +81,10 @@ impl<'a> VM<'a> {
                     self.push(FALSE)?;
                     ip += 1;
                 }
+                OpEqual | OpNotEqual | OpGreaterThan => {
+                    self.execute_comparison(op)?;
+                    ip += 1;
+                }
             }
         }
         Ok(())
@@ -122,6 +126,50 @@ impl<'a> VM<'a> {
         self.push(Integer { value: result })?;
         Ok(())
     }
+    fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
+        use Object::*;
+        use Opcode::*;
+        let right = self.pop()?;
+        let left = self.pop()?;
+        match (op, left, right) {
+            (op, Integer { value: left }, Integer { value: right }) => {
+                self.execute_integer_comparison(op, left, right)?;
+            }
+            (op, left, right) if op == OpEqual => {
+                self.push(Self::native_bool_to_boolean_object(left == right))?;
+            }
+            (op, left, right) if op == OpNotEqual => {
+                self.push(Self::native_bool_to_boolean_object(left != right))?;
+            }
+            (op, left, right) => {
+                bail!(
+                    "unknown operator: {:?} ({} {})",
+                    op,
+                    left.r#type(),
+                    right.r#type()
+                );
+            }
+        }
+        Ok(())
+    }
+    fn execute_integer_comparison(&mut self, op: Opcode, left: i64, right: i64) -> Result<()> {
+        use Opcode::*;
+        let result = match op {
+            OpEqual => left == right,
+            OpNotEqual => left != right,
+            OpGreaterThan => left > right,
+            _ => bail!("unknown operator: {:?}", op),
+        };
+        self.push(Self::native_bool_to_boolean_object(result))?;
+        Ok(())
+    }
+    fn native_bool_to_boolean_object(value: bool) -> Object {
+        if value {
+            TRUE
+        } else {
+            FALSE
+        }
+    }
 }
 
 #[cfg(test)]
@@ -159,7 +207,19 @@ mod tests {
 
     #[test]
     fn test_boolean_expressions() {
-        let tests = vec![("true", true), ("false", false)];
+        let tests = vec![
+            ("true", true),
+            ("false", false),
+            ("1 < 2", true),
+            ("1 > 2", false),
+            ("1 == 1", true),
+            ("1 != 1", false),
+            ("true == true", true),
+            ("false == false", true),
+            ("true == false", false),
+            ("true != false", true),
+            ("(1 < 2) != (3 > 4)", true),
+        ];
         let tests = tests
             .into_iter()
             .map(|(input, value)| (input, Object::Boolean { value }))

@@ -6,6 +6,8 @@ use anyhow::{bail, ensure, Result};
 #[derive(PartialOrd, PartialEq)]
 enum Precedence {
     LOWEST,
+    EQUALS,
+    LESS,
     SUM,
     PRODUCT,
     CALL,
@@ -21,6 +23,8 @@ impl Token {
             INT(_) => LOWEST,
             PLUS | MINUS => SUM,
             ASTERISK | SLASH => PRODUCT,
+            LT | GT => LESS,
+            EQ | NEQ => EQUALS,
             SEMICOLON => LOWEST,
             LPAREN => CALL,
             RPAREN => LOWEST,
@@ -98,7 +102,7 @@ impl<'a> Parser<'a> {
         };
         while !self.peek_token_is(Token::SEMICOLON) && precedence < self.peek.precedence() {
             exp = match &self.peek {
-                PLUS | MINUS | ASTERISK | SLASH => {
+                PLUS | MINUS | ASTERISK | SLASH | LT | GT | EQ | NEQ => {
                     self.next_token();
                     self.parse_infix_expression(exp)?
                 }
@@ -121,6 +125,10 @@ impl<'a> Parser<'a> {
             Token::MINUS => Operator::MINUS,
             Token::ASTERISK => Operator::ASTERISK,
             Token::SLASH => Operator::SLASH,
+            Token::LT => Operator::LT,
+            Token::GT => Operator::GT,
+            Token::EQ => Operator::EQ,
+            Token::NEQ => Operator::NEQ,
             token => {
                 bail!("unexpected operator: {:?}", token);
             }
@@ -218,6 +226,18 @@ mod tests {
                 SLASH => {
                     write!(f, "/")
                 }
+                LT => {
+                    write!(f, "<")
+                }
+                GT => {
+                    write!(f, ">")
+                }
+                EQ => {
+                    write!(f, "==")
+                }
+                NEQ => {
+                    write!(f, "!=")
+                }
             }
         }
     }
@@ -228,6 +248,8 @@ mod tests {
             ("1 + 2 + 3", "((1 + 2) + 3)"),
             ("1 + 2 * 3", "(1 + (2 * 3))"),
             ("1 + (2 + 3)", "(1 + (2 + 3))"),
+            ("1 + 2 == 3", "((1 + 2) == 3)"),
+            ("1 < 2 != 3 > 4", "((1 < 2) != (3 > 4))"),
         ];
         for (input, expected) in tests {
             let program = parse(input);

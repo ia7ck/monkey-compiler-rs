@@ -10,6 +10,12 @@ pub enum Token {
     ASTERISK, // *
     SLASH,    // /
 
+    LT, // <
+    GT, // >
+
+    EQ,  // ==
+    NEQ, // !=
+
     SEMICOLON, // ;
 
     LPAREN, // (

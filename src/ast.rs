@@ -29,4 +29,8 @@ pub enum Operator {
     MINUS,
     ASTERISK,
     SLASH,
+    LT,
+    GT,
+    EQ,
+    NEQ,
 }
