@@ -92,6 +92,9 @@ pub enum Opcode {
     OpConstant,
     OpAdd,
     OpPop,
+    OpSub,
+    OpMul,
+    OpDiv,
 }
 
 impl TryFrom<u8> for Opcode {
@@ -102,6 +105,9 @@ impl TryFrom<u8> for Opcode {
             0 => Ok(OpConstant),
             1 => Ok(OpAdd),
             2 => Ok(OpPop),
+            3 => Ok(OpSub),
+            4 => Ok(OpMul),
+            5 => Ok(OpDiv),
             _ => Err("not found opcode"),
         }
     }
@@ -127,6 +133,9 @@ static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpConstant, vec![2]),
         Definition::new(OpAdd, vec![]),
         Definition::new(OpPop, vec![]),
+        Definition::new(OpSub, vec![]),
+        Definition::new(OpMul, vec![]),
+        Definition::new(OpDiv, vec![]),
     ];
     for (i, def) in definitions.iter().enumerate() {
         let op = Opcode::try_from(i as u8).unwrap();

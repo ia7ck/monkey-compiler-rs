@@ -19,8 +19,8 @@ impl Token {
             ILLEGAL(_) => LOWEST,
             EOF => LOWEST,
             INT(_) => LOWEST,
-            PLUS => SUM,
-            ASTERISK => PRODUCT,
+            PLUS | MINUS => SUM,
+            ASTERISK | SLASH => PRODUCT,
             SEMICOLON => LOWEST,
             LPAREN => CALL,
             RPAREN => LOWEST,
@@ -94,7 +94,7 @@ impl<'a> Parser<'a> {
         };
         while !self.peek_token_is(Token::SEMICOLON) && precedence < self.peek.precedence() {
             exp = match &self.peek {
-                PLUS | ASTERISK => {
+                PLUS | MINUS | ASTERISK | SLASH => {
                     self.next_token();
                     self.parse_infix_expression(exp)?
                 }
@@ -114,7 +114,9 @@ impl<'a> Parser<'a> {
     fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression> {
         let op = match &self.cur {
             Token::PLUS => Operator::PLUS,
+            Token::MINUS => Operator::MINUS,
             Token::ASTERISK => Operator::ASTERISK,
+            Token::SLASH => Operator::SLASH,
             token => {
                 bail!("unexpected operator: {:?}", token);
             }
@@ -200,8 +202,14 @@ mod tests {
                 PLUS => {
                     write!(f, "+")
                 }
+                MINUS => {
+                    write!(f, "-")
+                }
                 ASTERISK => {
                     write!(f, "*")
+                }
+                SLASH => {
+                    write!(f, "/")
                 }
             }
         }

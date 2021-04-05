@@ -48,8 +48,14 @@ impl Compiler {
                     PLUS => {
                         self.emit(OpAdd, &[]);
                     }
-                    _ => {
-                        todo!()
+                    MINUS => {
+                        self.emit(OpSub, &[]);
+                    }
+                    ASTERISK => {
+                        self.emit(OpMul, &[]);
+                    }
+                    SLASH => {
+                        self.emit(OpDiv, &[]);
                     }
                 }
             }
@@ -129,6 +135,36 @@ mod tests {
                     make(OpConstant, &[0]),
                     make(OpPop, &[]),
                     make(OpConstant, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 - 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpSub, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 * 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpMul, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "2 / 1",
+                expected_constants: vec![Integer(2), Integer(1)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpDiv, &[]),
                     make(OpPop, &[]),
                 ],
             },

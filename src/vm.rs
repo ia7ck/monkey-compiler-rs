@@ -1,6 +1,7 @@
 use crate::code::{read_uint16, Instructions, Opcode};
 use crate::compiler::Bytecode;
 use crate::object::Object;
+use crate::object::Object::Integer;
 use anyhow::{bail, Result};
 use std::convert::TryFrom;
 
@@ -49,7 +50,6 @@ impl<'a> VM<'a> {
         }
     }
     pub fn run(&mut self) -> Result<()> {
-        use Object::*;
         use Opcode::*;
         let mut ip = 0;
         while ip < self.instructions.len() {
@@ -58,25 +58,50 @@ impl<'a> VM<'a> {
                 OpConstant => {
                     let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
                     // opcode (1 byte) + operand (2 byte)
-                    ip += 3;
                     let obj = self.constants[const_index].clone();
                     self.push(obj)?;
-                }
-                OpAdd => {
-                    ip += 1;
-                    let right = self.pop()?;
-                    let left = self.pop()?;
-                    let result = match (left, right) {
-                        (Integer { value: left }, Integer { value: right }) => left + right,
-                    };
-                    self.push(Integer { value: result })?;
+                    ip += 3;
                 }
                 OpPop => {
-                    ip += 1;
                     self.pop()?;
+                    ip += 1;
+                }
+                OpAdd | OpSub | OpMul | OpDiv => {
+                    self.execute_binary_operation(op)?;
+                    ip += 1;
                 }
             }
         }
+        Ok(())
+    }
+    fn execute_binary_operation(&mut self, op: Opcode) -> Result<()> {
+        use Object::*;
+        let right = self.pop()?;
+        let left = self.pop()?;
+        match (left, right) {
+            (Integer { value: left }, Integer { value: right }) => {
+                self.execute_binary_integer_operation(op, left, right)?;
+            }
+        };
+        Ok(())
+    }
+    fn execute_binary_integer_operation(
+        &mut self,
+        op: Opcode,
+        left: i64,
+        right: i64,
+    ) -> Result<()> {
+        use Opcode::*;
+        let result = match op {
+            OpAdd => left + right,
+            OpSub => left - right,
+            OpMul => left * right,
+            OpDiv => left / right,
+            _ => {
+                bail!("unknown integer operator: {:?}", op)
+            }
+        };
+        self.push(Integer { value: result })?;
         Ok(())
     }
 }
@@ -93,12 +118,24 @@ mod tests {
 
     #[test]
     fn test_integer_arithmetic() {
-        use Object::*;
         let tests = vec![
-            ("1", Integer { value: 1 }),
-            ("2", Integer { value: 2 }),
-            ("1 + 2", Integer { value: 3 }),
+            ("1", 1),
+            ("2", 2),
+            ("1 + 2", 3),
+            ("1 * 2", 2),
+            ("4 / 2", 2),
+            ("50 / 2 * 2 + 10 - 5", 55),
+            ("5 * (2 + 10)", 60),
+            ("5 + 5 + 5 + 5 - 10", 10),
+            ("2 * 2 * 2 * 2 * 2", 32),
+            ("5 * 2 + 10", 20),
+            ("5 + 2 * 10", 25),
+            ("5 * (2 + 10)", 60),
         ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::Integer { value }))
+            .collect();
         run_vm_tests(tests);
     }
 

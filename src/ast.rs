@@ -23,5 +23,7 @@ pub enum Expression {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
     PLUS,
+    MINUS,
     ASTERISK,
+    SLASH,
 }

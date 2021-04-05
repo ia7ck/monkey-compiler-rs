@@ -49,9 +49,17 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 PLUS
             }
+            '-' => {
+                self.read_char();
+                MINUS
+            }
             '*' => {
                 self.read_char();
                 ASTERISK
+            }
+            '/' => {
+                self.read_char();
+                SLASH
             }
             ';' => {
                 self.read_char();

@@ -6,7 +6,9 @@ pub enum Token {
     INT(String),
 
     PLUS,     // +
+    MINUS,    // -
     ASTERISK, // *
+    SLASH,    // /
 
     SEMICOLON, // ;
 
