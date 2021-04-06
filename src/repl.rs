@@ -38,7 +38,7 @@ pub fn start() {
                 let mut machine = VM::new(&bytecode);
                 machine
                     .run()
-                    .map(|()| machine.stack_top().unwrap().clone())
+                    .map(|()| machine.last_popped_stack_elem())
                     .map_err(|err| format!("executing bytecode failed:\n {:?}", err))
             });
         match result {

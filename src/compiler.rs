@@ -1,4 +1,4 @@
-use crate::ast::{Expression, Operator, Program, Statement};
+use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
 use crate::code::{make, Instructions, Opcode};
 use crate::object::Object;
 use anyhow::Result;
@@ -26,29 +26,51 @@ impl Compiler {
         match statement {
             ExpressionStatement(exp) => {
                 self.compile_expression(exp)?;
+                self.emit(Opcode::OpPop, &[]);
             }
         }
         Ok(())
     }
     fn compile_expression(&mut self, expression: Expression) -> Result<()> {
         use Expression::*;
+        use InfixOperator::*;
         use Object::*;
         use Opcode::*;
-        use Operator::*;
         match expression {
             InfixExpression {
                 left,
                 operator,
                 right,
             } => {
+                let (left, right) = if operator == LT {
+                    // swap
+                    (right, left)
+                } else {
+                    (left, right)
+                };
                 self.compile_expression(*left)?;
                 self.compile_expression(*right)?;
                 match operator {
                     PLUS => {
                         self.emit(OpAdd, &[]);
                     }
-                    _ => {
-                        todo!()
+                    MINUS => {
+                        self.emit(OpSub, &[]);
+                    }
+                    ASTERISK => {
+                        self.emit(OpMul, &[]);
+                    }
+                    SLASH => {
+                        self.emit(OpDiv, &[]);
+                    }
+                    LT | GT => {
+                        self.emit(OpGreaterThan, &[]);
+                    }
+                    EQ => {
+                        self.emit(OpEqual, &[]);
+                    }
+                    NEQ => {
+                        self.emit(OpNotEqual, &[]);
                     }
                 }
             }
@@ -56,6 +78,24 @@ impl Compiler {
                 let integer = Integer { value };
                 let operands = &[self.add_constant(integer)];
                 self.emit(OpConstant, operands);
+            }
+            Expression::Boolean { value } => {
+                if value {
+                    self.emit(OpTrue, &[]);
+                } else {
+                    self.emit(OpFalse, &[]);
+                }
+            }
+            PrefixExpression { operator, right } => {
+                self.compile_expression(*right)?;
+                match operator {
+                    PrefixOperator::MINUS => {
+                        self.emit(OpMinus, &[]);
+                    }
+                    PrefixOperator::BANG => {
+                        self.emit(OpBang, &[]);
+                    }
+                }
             }
         }
         Ok(())
@@ -110,15 +150,131 @@ mod tests {
     fn test_integer_arithmetic() {
         use Constant::*;
         use Opcode::*;
-        let tests = vec![CompilerTestCase {
-            input: "1 + 2",
-            expected_constants: vec![Integer(1), Integer(2)],
-            expected_instructions: vec![
-                make(OpConstant, &[0]),
-                make(OpConstant, &[1]),
-                make(OpAdd, &[]),
-            ],
-        }];
+        let tests = vec![
+            CompilerTestCase {
+                input: "1 + 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpAdd, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1; 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpPop, &[]),
+                    make(OpConstant, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 - 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpSub, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 * 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpMul, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "2 / 1",
+                expected_constants: vec![Integer(2), Integer(1)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpDiv, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "-1",
+                expected_constants: vec![Integer(1)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpMinus, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(&tests);
+    }
+
+    #[test]
+    fn test_boolean_expressions() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "true",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpTrue, &[]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "false",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpFalse, &[]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "1 > 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpGreaterThan, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 < 2",
+                expected_constants: vec![Integer(2), Integer(1)], // !!!
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpGreaterThan, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 == 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpEqual, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "1 != 2",
+                expected_constants: vec![Integer(1), Integer(2)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpNotEqual, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "!true",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpTrue, &[]), make(OpBang, &[]), make(OpPop, &[])],
+            },
+        ];
         run_compiler_tests(&tests);
     }
 

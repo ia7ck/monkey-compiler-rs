@@ -1,16 +1,20 @@
 use crate::code::{read_uint16, Instructions, Opcode};
 use crate::compiler::Bytecode;
 use crate::object::Object;
+use crate::object::Object::Integer;
 use anyhow::{bail, Result};
 use std::convert::TryFrom;
 
 const STACK_SIZE: usize = 2048;
 
+const TRUE: Object = Object::Boolean { value: true };
+const FALSE: Object = Object::Boolean { value: false };
+
 pub struct VM<'a> {
     instructions: &'a Instructions,
     constants: &'a [Object],
-
     stack: Vec<Object>,
+    last_popped: Option<Object>,
 }
 
 impl<'a> VM<'a> {
@@ -19,10 +23,16 @@ impl<'a> VM<'a> {
             instructions: bytecode.instructions,
             constants: bytecode.constants,
             stack: Vec::with_capacity(STACK_SIZE),
+            last_popped: None,
         }
     }
-    pub fn stack_top(&self) -> Option<&Object> {
-        self.stack.last()
+    pub fn last_popped_stack_elem(&self) -> Result<Object> {
+        match self.last_popped.as_ref() {
+            Some(obj) => Ok(obj.clone()),
+            None => {
+                bail!("there is no last popped stack element");
+            }
+        }
     }
     fn push(&mut self, obj: Object) -> Result<()> {
         if self.stack.len() >= STACK_SIZE {
@@ -31,11 +41,18 @@ impl<'a> VM<'a> {
         self.stack.push(obj);
         Ok(())
     }
-    fn pop(&mut self) -> Object {
-        self.stack.pop().unwrap()
+    fn pop(&mut self) -> Result<Object> {
+        match self.stack.pop() {
+            Some(obj) => {
+                self.last_popped = Some(obj.clone());
+                Ok(obj)
+            }
+            None => {
+                bail!("stack is empty");
+            }
+        }
     }
     pub fn run(&mut self) -> Result<()> {
-        use Object::*;
         use Opcode::*;
         let mut ip = 0;
         while ip < self.instructions.len() {
@@ -44,22 +61,152 @@ impl<'a> VM<'a> {
                 OpConstant => {
                     let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
                     // opcode (1 byte) + operand (2 byte)
-                    ip += 3;
                     let obj = self.constants[const_index].clone();
                     self.push(obj)?;
+                    ip += 3;
                 }
-                OpAdd => {
+                OpPop => {
+                    self.pop()?;
                     ip += 1;
-                    let right = self.pop();
-                    let left = self.pop();
-                    let result = match (left, right) {
-                        (Integer { value: left }, Integer { value: right }) => left + right,
-                    };
-                    self.push(Integer { value: result })?;
+                }
+                OpAdd | OpSub | OpMul | OpDiv => {
+                    self.execute_binary_operation(op)?;
+                    ip += 1;
+                }
+                OpTrue => {
+                    self.push(TRUE)?;
+                    ip += 1;
+                }
+                OpFalse => {
+                    self.push(FALSE)?;
+                    ip += 1;
+                }
+                OpEqual | OpNotEqual | OpGreaterThan => {
+                    self.execute_comparison(op)?;
+                    ip += 1;
+                }
+                OpMinus => {
+                    self.execute_minus_operator()?;
+                    ip += 1;
+                }
+                OpBang => {
+                    self.execute_bang_operator()?;
+                    ip += 1;
                 }
             }
         }
         Ok(())
+    }
+    fn execute_binary_operation(&mut self, op: Opcode) -> Result<()> {
+        use Object::*;
+        let right = self.pop()?;
+        let left = self.pop()?;
+        match (left, right) {
+            (Integer { value: left }, Integer { value: right }) => {
+                self.execute_binary_integer_operation(op, left, right)?;
+            }
+            (left, right) => {
+                bail!(
+                    "unsupported types for binary operation {} {}",
+                    left.r#type(),
+                    right.r#type()
+                );
+            }
+        };
+        Ok(())
+    }
+    fn execute_binary_integer_operation(
+        &mut self,
+        op: Opcode,
+        left: i64,
+        right: i64,
+    ) -> Result<()> {
+        use Opcode::*;
+        let result = match op {
+            OpAdd => left + right,
+            OpSub => left - right,
+            OpMul => left * right,
+            OpDiv => left / right,
+            _ => {
+                bail!("unknown integer operator: {:?}", op)
+            }
+        };
+        self.push(Integer { value: result })?;
+        Ok(())
+    }
+    fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
+        use Object::*;
+        use Opcode::*;
+        let right = self.pop()?;
+        let left = self.pop()?;
+        match (op, left, right) {
+            (op, Integer { value: left }, Integer { value: right }) => {
+                self.execute_integer_comparison(op, left, right)?;
+            }
+            (op, left, right) if op == OpEqual => {
+                self.push(Self::native_bool_to_boolean_object(left == right))?;
+            }
+            (op, left, right) if op == OpNotEqual => {
+                self.push(Self::native_bool_to_boolean_object(left != right))?;
+            }
+            (op, left, right) => {
+                bail!(
+                    "unknown operator: {:?} ({} {})",
+                    op,
+                    left.r#type(),
+                    right.r#type()
+                );
+            }
+        }
+        Ok(())
+    }
+    fn execute_integer_comparison(&mut self, op: Opcode, left: i64, right: i64) -> Result<()> {
+        use Opcode::*;
+        let result = match op {
+            OpEqual => left == right,
+            OpNotEqual => left != right,
+            OpGreaterThan => left > right,
+            _ => bail!("unknown operator: {:?}", op),
+        };
+        self.push(Self::native_bool_to_boolean_object(result))?;
+        Ok(())
+    }
+    fn execute_minus_operator(&mut self) -> Result<()> {
+        use Object::*;
+        let operand = self.pop()?;
+        match operand {
+            Integer { value } => {
+                self.push(Integer { value: -value })?;
+            }
+            _ => {
+                bail!("unsupported type for negation: {}", operand.r#type());
+            }
+        }
+        Ok(())
+    }
+    fn execute_bang_operator(&mut self) -> Result<()> {
+        use Object::*;
+        let operand = self.pop()?;
+        match operand {
+            Boolean { value } => {
+                if value {
+                    self.push(FALSE)?;
+                } else {
+                    self.push(TRUE)?;
+                }
+            }
+            _ => {
+                self.push(FALSE)?;
+            }
+        }
+        Ok(())
+    }
+    fn native_bool_to_boolean_object(value: bool) -> Object {
+        if value {
+            TRUE
+        } else {
+            FALSE
+        }
     }
 }
 
@@ -71,36 +218,66 @@ mod tests {
     use crate::object::Object;
     use crate::parser::Parser;
     use crate::vm::VM;
-    use anyhow::{bail, Result};
-
-    struct VMTestCase {
-        input: &'static str,
-        expected: Object,
-    }
+    use anyhow::{bail, ensure, Result};
 
     #[test]
     fn test_integer_arithmetic() {
-        use Object::*;
         let tests = vec![
-            VMTestCase {
-                input: "1",
-                expected: Integer { value: 1 },
-            },
-            VMTestCase {
-                input: "2",
-                expected: Integer { value: 2 },
-            },
-            VMTestCase {
-                input: "1 + 2",
-                expected: Integer { value: 3 },
-            },
+            ("1", 1),
+            ("2", 2),
+            ("1 + 2", 3),
+            ("1 * 2", 2),
+            ("4 / 2", 2),
+            ("50 / 2 * 2 + 10 - 5", 55),
+            ("5 * (2 + 10)", 60),
+            ("5 + 5 + 5 + 5 - 10", 10),
+            ("2 * 2 * 2 * 2 * 2", 32),
+            ("5 * 2 + 10", 20),
+            ("5 + 2 * 10", 25),
+            ("5 * (2 + 10)", 60),
+            ("-5", -5),
+            ("-10", -10),
+            ("-50 + 100 + -50", 0),
+            ("(5 + 10 * 2 + 15 / 3) * 2 + -10", 50),
         ];
-        run_vm_tests(&tests);
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::Integer { value }))
+            .collect();
+        run_vm_tests(tests);
     }
 
-    fn run_vm_tests(tests: &[VMTestCase]) {
-        for tt in tests {
-            let program = parse(tt.input);
+    #[test]
+    fn test_boolean_expressions() {
+        let tests = vec![
+            ("true", true),
+            ("false", false),
+            ("1 < 2", true),
+            ("1 > 2", false),
+            ("1 == 1", true),
+            ("1 != 1", false),
+            ("true == true", true),
+            ("false == false", true),
+            ("true == false", false),
+            ("true != false", true),
+            ("(1 < 2) != (3 > 4)", true),
+            ("!true", false),
+            ("!false", true),
+            ("!5", false),
+            ("!!true", true),
+            ("!!false", false),
+            ("!!5", true),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::Boolean { value }))
+            .collect();
+        run_vm_tests(tests);
+    }
+
+    fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
+        for (input, expected) in tests {
+            let program = parse(input);
             let mut compiler = Compiler::new();
             compiler
                 .compile(program)
@@ -108,10 +285,10 @@ mod tests {
             let bytecode = compiler.bytecode();
             let mut vm = VM::new(&bytecode);
             vm.run().unwrap_or_else(|err| panic!("vm error: {:?}", err));
-            let stack_elem = vm.stack_top().unwrap_or_else(|| {
-                panic!("stack is empty");
-            });
-            test_expected_object(&tt.expected, stack_elem);
+            let stack_elem = vm
+                .last_popped_stack_elem()
+                .unwrap_or_else(|err| panic!("{:?}", err));
+            test_expected_object(expected, stack_elem);
         }
     }
 
@@ -121,24 +298,21 @@ mod tests {
         parser.parse().unwrap()
     }
 
-    fn test_expected_object(expected: &Object, actual: &Object) {
+    fn test_expected_object(expected: Object, actual: Object) {
+        use Object::*;
         match expected {
-            Object::Integer { value } => {
+            Integer { value } => {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
             }
-        }
-    }
-
-    impl Object {
-        pub fn r#type(&self) -> &'static str {
-            match self {
-                Object::Integer { .. } => "INTEGER",
+            Boolean { value } => {
+                test_boolean_object(value, actual)
+                    .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
             }
         }
     }
 
-    fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
+    fn test_integer_object(expected: i64, actual: Object) -> Result<()> {
         match actual {
             Object::Integer { value } => {
                 if expected != value {
@@ -151,6 +325,27 @@ mod tests {
                     actual.r#type(),
                     actual
                 );
+            }
+        }
+        Ok(())
+    }
+
+    fn test_boolean_object(expected: bool, actual: Object) -> Result<()> {
+        match actual {
+            Object::Boolean { value } => {
+                ensure!(
+                    expected == value,
+                    "object has wrong value. want={}, got={}",
+                    expected,
+                    value
+                );
+            }
+            _ => {
+                bail!(
+                    "object is not Boolean. got={} ({:?})",
+                    actual.r#type(),
+                    actual
+                )
             }
         }
         Ok(())

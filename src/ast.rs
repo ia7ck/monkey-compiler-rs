@@ -13,15 +13,34 @@ pub enum Expression {
     IntegerLiteral {
         value: i64,
     },
+    Boolean {
+        value: bool,
+    },
+    PrefixExpression {
+        operator: PrefixOperator,
+        right: Box<Expression>,
+    },
     InfixExpression {
         left: Box<Expression>,
-        operator: Operator,
+        operator: InfixOperator,
         right: Box<Expression>,
     },
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Operator {
+pub enum InfixOperator {
     PLUS,
+    MINUS,
     ASTERISK,
+    SLASH,
+    LT,
+    GT,
+    EQ,
+    NEQ,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum PrefixOperator {
+    MINUS,
+    BANG,
 }

@@ -6,22 +6,31 @@ pub enum Token {
     INT(String),
 
     PLUS,     // +
+    MINUS,    // -
+    BANG,     // !
     ASTERISK, // *
+    SLASH,    // /
+
+    LT, // <
+    GT, // >
+
+    EQ,  // ==
+    NEQ, // !=
 
     SEMICOLON, // ;
 
     LPAREN, // (
     RPAREN, // )
+
+    TRUE,
+    FALSE,
 }
 
-// #[derive(Eq, PartialEq, Debug, Clone)]
-// pub struct Token {
-//     pub(crate) r#type: TokenType,
-//     literal: String,
-// }
-//
-// impl Token {
-//     pub fn new(r#type: TokenType, literal: String) -> Self {
-//         Self { r#type, literal }
-//     }
-// }
+pub fn lookup_identifier(ident: &str) -> Token {
+    use Token::*;
+    match ident {
+        "true" => TRUE,
+        "false" => FALSE,
+        _ => todo!(),
+    }
+}

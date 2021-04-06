@@ -1,5 +1,4 @@
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 use byteorder::{BigEndian, ByteOrder};
@@ -67,11 +66,11 @@ impl Display for Instructions {
                 );
             }
             match operand_count {
-                0 => def.name.to_string(),
+                0 => format!("{:?}", def.opcode),
                 1 => {
-                    format!("{} {}", def.name, operands[0])
+                    format!("{:?} {}", def.opcode, operands[0])
                 }
-                _ => format!("ERROR: unhandled operand_count for {}\n", def.name),
+                _ => format!("ERROR: unhandled operand_count for {:?}\n", def.opcode),
             }
         }
         let mut i = 0;
@@ -88,10 +87,21 @@ impl Display for Instructions {
         Ok(())
     }
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Opcode {
     OpConstant,
     OpAdd,
+    OpPop,
+    OpSub,
+    OpMul,
+    OpDiv,
+    OpTrue,
+    OpFalse,
+    OpEqual,
+    OpNotEqual,
+    OpGreaterThan,
+    OpMinus,
+    OpBang,
 }
 
 impl TryFrom<u8> for Opcode {
@@ -101,48 +111,72 @@ impl TryFrom<u8> for Opcode {
         match value {
             0 => Ok(OpConstant),
             1 => Ok(OpAdd),
+            2 => Ok(OpPop),
+            3 => Ok(OpSub),
+            4 => Ok(OpMul),
+            5 => Ok(OpDiv),
+            6 => Ok(OpTrue),
+            7 => Ok(OpFalse),
+            8 => Ok(OpEqual),
+            9 => Ok(OpNotEqual),
+            10 => Ok(OpGreaterThan),
+            11 => Ok(OpMinus),
+            12 => Ok(OpBang),
             _ => Err("not found opcode"),
         }
     }
 }
 
 pub struct Definition {
-    name: &'static str,
+    opcode: Opcode,
     operand_widths: Vec<usize>,
 }
 
-static DEFINITIONS: Lazy<HashMap<u8, Definition>> = Lazy::new(|| {
+impl Definition {
+    pub fn new(opcode: Opcode, operand_widths: Vec<usize>) -> Self {
+        Self {
+            opcode,
+            operand_widths,
+        }
+    }
+}
+
+static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
     use Opcode::*;
-    let mut map = HashMap::new();
-    map.insert(
-        OpConstant as u8,
-        Definition {
-            name: "OpConstant",
-            operand_widths: vec![2],
-        },
-    );
-    map.insert(
-        OpAdd as u8,
-        Definition {
-            name: "OpAdd",
-            operand_widths: vec![],
-        },
-    );
-    map
+    let definitions = vec![
+        Definition::new(OpConstant, vec![2]),
+        Definition::new(OpAdd, vec![]),
+        Definition::new(OpPop, vec![]),
+        Definition::new(OpSub, vec![]),
+        Definition::new(OpMul, vec![]),
+        Definition::new(OpDiv, vec![]),
+        Definition::new(OpTrue, vec![]),
+        Definition::new(OpFalse, vec![]),
+        Definition::new(OpEqual, vec![]),
+        Definition::new(OpNotEqual, vec![]),
+        Definition::new(OpGreaterThan, vec![]),
+        Definition::new(OpMinus, vec![]),
+        Definition::new(OpBang, vec![]),
+    ];
+    for (i, def) in definitions.iter().enumerate() {
+        let op = Opcode::try_from(i as u8).unwrap();
+        assert_eq!(op, def.opcode);
+    }
+    definitions
 });
 
 pub fn lookup<'a>(op: u8) -> Result<&'a Definition> {
     DEFINITIONS
-        .get(&op)
+        .get(op as usize)
         .ok_or_else(|| anyhow!("opcode {} is undefined", op))
 }
 
 pub fn make(op: Opcode, operands: &[usize]) -> Instructions {
-    let def = DEFINITIONS.get(&(op as u8));
-    if def.is_none() {
+    let op = op as usize;
+    if op >= DEFINITIONS.len() {
         return Instructions(vec![]);
     }
-    let def = def.unwrap();
+    let def = &DEFINITIONS[op];
     // opcode (1 byte) + operands (? byte)
     let instruction_len = 1 + def.operand_widths.iter().sum::<usize>();
     let mut instruction = vec![0u8; instruction_len];
