@@ -78,7 +78,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.read_char();
                         NEQ
                     }
-                    _ => todo!(),
+                    _ => BANG,
                 }
             }
             '*' => {

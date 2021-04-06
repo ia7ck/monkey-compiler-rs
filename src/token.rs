@@ -7,6 +7,7 @@ pub enum Token {
 
     PLUS,     // +
     MINUS,    // -
+    BANG,     // !
     ASTERISK, // *
     SLASH,    // /
 

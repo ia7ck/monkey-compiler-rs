@@ -1,4 +1,4 @@
-use crate::ast::{Expression, Operator, Program, Statement};
+use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
 use crate::lexer::Lexer;
 use crate::token::Token;
 use anyhow::{bail, ensure, Result};
@@ -10,6 +10,7 @@ enum Precedence {
     LESS,
     SUM,
     PRODUCT,
+    PREFIX,
     CALL,
 }
 
@@ -18,18 +19,12 @@ impl Token {
         use Precedence::*;
         use Token::*;
         match self {
-            ILLEGAL(_) => LOWEST,
-            EOF => LOWEST,
-            INT(_) => LOWEST,
             PLUS | MINUS => SUM,
             ASTERISK | SLASH => PRODUCT,
             LT | GT => LESS,
             EQ | NEQ => EQUALS,
-            SEMICOLON => LOWEST,
             LPAREN => CALL,
-            RPAREN => LOWEST,
-            TRUE => LOWEST,
-            FALSE => LOWEST,
+            _ => LOWEST,
         }
     }
 }
@@ -93,6 +88,7 @@ impl<'a> Parser<'a> {
                 let value = literal.parse::<i64>()?;
                 IntegerLiteral { value }
             }
+            MINUS | BANG => self.parse_prefix_expression()?,
             LPAREN => self.parse_grouped_expression()?,
             TRUE => Boolean { value: true },
             FALSE => Boolean { value: false },
@@ -119,16 +115,31 @@ impl<'a> Parser<'a> {
         self.next_token();
         Ok(exp)
     }
+    fn parse_prefix_expression(&mut self) -> Result<Expression> {
+        let op = match &self.cur {
+            Token::MINUS => PrefixOperator::MINUS,
+            Token::BANG => PrefixOperator::BANG,
+            token => {
+                bail!("unexpected operator: {:?}", token);
+            }
+        };
+        self.next_token();
+        let right = self.parse_expression(Precedence::PREFIX)?;
+        Ok(Expression::PrefixExpression {
+            operator: op,
+            right: Box::new(right),
+        })
+    }
     fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression> {
         let op = match &self.cur {
-            Token::PLUS => Operator::PLUS,
-            Token::MINUS => Operator::MINUS,
-            Token::ASTERISK => Operator::ASTERISK,
-            Token::SLASH => Operator::SLASH,
-            Token::LT => Operator::LT,
-            Token::GT => Operator::GT,
-            Token::EQ => Operator::EQ,
-            Token::NEQ => Operator::NEQ,
+            Token::PLUS => InfixOperator::PLUS,
+            Token::MINUS => InfixOperator::MINUS,
+            Token::ASTERISK => InfixOperator::ASTERISK,
+            Token::SLASH => InfixOperator::SLASH,
+            Token::LT => InfixOperator::LT,
+            Token::GT => InfixOperator::GT,
+            Token::EQ => InfixOperator::EQ,
+            Token::NEQ => InfixOperator::NEQ,
             token => {
                 bail!("unexpected operator: {:?}", token);
             }
@@ -146,7 +157,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{Expression, Operator, Program, Statement};
+    use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
     use crate::lexer::Lexer;
     use crate::parser::Parser;
     use std::fmt::{Display, Formatter};
@@ -199,6 +210,9 @@ mod tests {
                 Boolean { value } => {
                     write!(f, "{}", value)
                 }
+                PrefixExpression { operator, right } => {
+                    write!(f, "({}{})", operator, right)
+                }
                 InfixExpression {
                     left,
                     operator,
@@ -210,9 +224,23 @@ mod tests {
         }
     }
 
-    impl Display for Operator {
+    impl Display for PrefixOperator {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            use Operator::*;
+            use PrefixOperator::*;
+            match self {
+                MINUS => {
+                    write!(f, "-")
+                }
+                BANG => {
+                    write!(f, "!")
+                }
+            }
+        }
+    }
+
+    impl Display for InfixOperator {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            use InfixOperator::*;
             match self {
                 PLUS => {
                     write!(f, "+")
@@ -250,6 +278,8 @@ mod tests {
             ("1 + (2 + 3)", "(1 + (2 + 3))"),
             ("1 + 2 == 3", "((1 + 2) == 3)"),
             ("1 < 2 != 3 > 4", "((1 < 2) != (3 > 4))"),
+            ("-1 * 2", "((-1) * 2)"),
+            ("1 * -2", "(1 * (-2))"),
         ];
         for (input, expected) in tests {
             let program = parse(input);

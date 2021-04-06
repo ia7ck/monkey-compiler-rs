@@ -1,4 +1,4 @@
-use crate::ast::{Expression, Operator, Program, Statement};
+use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
 use crate::code::{make, Instructions, Opcode};
 use crate::object::Object;
 use anyhow::Result;
@@ -33,9 +33,9 @@ impl Compiler {
     }
     fn compile_expression(&mut self, expression: Expression) -> Result<()> {
         use Expression::*;
+        use InfixOperator::*;
         use Object::*;
         use Opcode::*;
-        use Operator::*;
         match expression {
             InfixExpression {
                 left,
@@ -84,6 +84,17 @@ impl Compiler {
                     self.emit(OpTrue, &[]);
                 } else {
                     self.emit(OpFalse, &[]);
+                }
+            }
+            PrefixExpression { operator, right } => {
+                self.compile_expression(*right)?;
+                match operator {
+                    PrefixOperator::MINUS => {
+                        self.emit(OpMinus, &[]);
+                    }
+                    PrefixOperator::BANG => {
+                        self.emit(OpBang, &[]);
+                    }
                 }
             }
         }
@@ -190,6 +201,15 @@ mod tests {
                     make(OpPop, &[]),
                 ],
             },
+            CompilerTestCase {
+                input: "-1",
+                expected_constants: vec![Integer(1)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpMinus, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
         ];
         run_compiler_tests(&tests);
     }
@@ -248,6 +268,11 @@ mod tests {
                     make(OpNotEqual, &[]),
                     make(OpPop, &[]),
                 ],
+            },
+            CompilerTestCase {
+                input: "!true",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpTrue, &[]), make(OpBang, &[]), make(OpPop, &[])],
             },
         ];
         run_compiler_tests(&tests);

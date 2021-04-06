@@ -85,6 +85,14 @@ impl<'a> VM<'a> {
                     self.execute_comparison(op)?;
                     ip += 1;
                 }
+                OpMinus => {
+                    self.execute_minus_operator()?;
+                    ip += 1;
+                }
+                OpBang => {
+                    self.execute_bang_operator()?;
+                    ip += 1;
+                }
             }
         }
         Ok(())
@@ -163,6 +171,36 @@ impl<'a> VM<'a> {
         self.push(Self::native_bool_to_boolean_object(result))?;
         Ok(())
     }
+    fn execute_minus_operator(&mut self) -> Result<()> {
+        use Object::*;
+        let operand = self.pop()?;
+        match operand {
+            Integer { value } => {
+                self.push(Integer { value: -value })?;
+            }
+            _ => {
+                bail!("unsupported type for negation: {}", operand.r#type());
+            }
+        }
+        Ok(())
+    }
+    fn execute_bang_operator(&mut self) -> Result<()> {
+        use Object::*;
+        let operand = self.pop()?;
+        match operand {
+            Boolean { value } => {
+                if value {
+                    self.push(FALSE)?;
+                } else {
+                    self.push(TRUE)?;
+                }
+            }
+            _ => {
+                self.push(FALSE)?;
+            }
+        }
+        Ok(())
+    }
     fn native_bool_to_boolean_object(value: bool) -> Object {
         if value {
             TRUE
@@ -197,6 +235,10 @@ mod tests {
             ("5 * 2 + 10", 20),
             ("5 + 2 * 10", 25),
             ("5 * (2 + 10)", 60),
+            ("-5", -5),
+            ("-10", -10),
+            ("-50 + 100 + -50", 0),
+            ("(5 + 10 * 2 + 15 / 3) * 2 + -10", 50),
         ];
         let tests = tests
             .into_iter()
@@ -219,6 +261,12 @@ mod tests {
             ("true == false", false),
             ("true != false", true),
             ("(1 < 2) != (3 > 4)", true),
+            ("!true", false),
+            ("!false", true),
+            ("!5", false),
+            ("!!true", true),
+            ("!!false", false),
+            ("!!5", true),
         ];
         let tests = tests
             .into_iter()

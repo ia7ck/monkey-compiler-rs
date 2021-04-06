@@ -16,15 +16,19 @@ pub enum Expression {
     Boolean {
         value: bool,
     },
+    PrefixExpression {
+        operator: PrefixOperator,
+        right: Box<Expression>,
+    },
     InfixExpression {
         left: Box<Expression>,
-        operator: Operator,
+        operator: InfixOperator,
         right: Box<Expression>,
     },
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Operator {
+pub enum InfixOperator {
     PLUS,
     MINUS,
     ASTERISK,
@@ -33,4 +37,10 @@ pub enum Operator {
     GT,
     EQ,
     NEQ,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum PrefixOperator {
+    MINUS,
+    BANG,
 }
