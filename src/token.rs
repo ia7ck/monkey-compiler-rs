@@ -21,9 +21,13 @@ pub enum Token {
 
     LPAREN, // (
     RPAREN, // )
+    LBRACE, // {
+    RBRACE, // }
 
     TRUE,
     FALSE,
+    IF,
+    ELSE,
 }
 
 pub fn lookup_identifier(ident: &str) -> Token {
@@ -31,6 +35,8 @@ pub fn lookup_identifier(ident: &str) -> Token {
     match ident {
         "true" => TRUE,
         "false" => FALSE,
+        "if" => IF,
+        "else" => ELSE,
         _ => todo!(),
     }
 }

@@ -28,6 +28,7 @@ impl Compiler {
                 self.compile_expression(exp)?;
                 self.emit(Opcode::OpPop, &[]);
             }
+            BlockStatement(..) => todo!(),
         }
         Ok(())
     }
@@ -97,6 +98,7 @@ impl Compiler {
                     }
                 }
             }
+            IfExpression { .. } => todo!(),
         }
         Ok(())
     }

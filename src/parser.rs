@@ -92,6 +92,7 @@ impl<'a> Parser<'a> {
             LPAREN => self.parse_grouped_expression()?,
             TRUE => Boolean { value: true },
             FALSE => Boolean { value: false },
+            IF => self.parse_if_expression()?,
             _ => {
                 bail!("cannot parse: {:?}", self.cur);
             }
@@ -153,6 +154,41 @@ impl<'a> Parser<'a> {
             right: Box::new(right),
         })
     }
+    fn parse_if_expression(&mut self) -> Result<Expression> {
+        ensure!(self.peek == Token::LPAREN);
+        self.next_token();
+        self.next_token();
+        let condition = self.parse_expression(Precedence::LOWEST)?;
+        ensure!(self.peek == Token::RPAREN);
+        self.next_token();
+        ensure!(self.peek == Token::LBRACE);
+        self.next_token();
+        let consequence = self.parse_block_statement()?;
+        let alternative = if self.peek_token_is(Token::ELSE) {
+            self.next_token();
+            ensure!(self.peek == Token::LBRACE);
+            self.next_token();
+            let alt = self.parse_block_statement()?;
+            Some(Box::new(alt))
+        } else {
+            None
+        };
+        Ok(Expression::IfExpression {
+            condition: Box::new(condition),
+            consequence: Box::new(consequence),
+            alternative,
+        })
+    }
+    fn parse_block_statement(&mut self) -> Result<Statement> {
+        self.next_token();
+        let mut statements = Vec::new();
+        while !self.cur_token_is(Token::RBRACE) {
+            let stmt = self.parse_statement()?;
+            statements.push(stmt);
+            self.next_token();
+        }
+        Ok(Statement::BlockStatement(statements))
+    }
 }
 
 #[cfg(test)]
@@ -180,6 +216,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_if_else_expression() {
+        use Expression::*;
+        use Statement::*;
+        let program = parse("if (1 < 2) { 3; 4 } else { 5; };");
+        let statements = program.statements;
+        assert_eq!(statements.len(), 1);
+        let stmt = statements[0].clone();
+        assert_eq!(
+            stmt,
+            ExpressionStatement(IfExpression {
+                condition: Box::new(InfixExpression {
+                    left: Box::new(IntegerLiteral { value: 1 }),
+                    operator: InfixOperator::LT,
+                    right: Box::new(IntegerLiteral { value: 2 })
+                }),
+                consequence: Box::new(BlockStatement(vec![
+                    ExpressionStatement(IntegerLiteral { value: 3 }),
+                    ExpressionStatement(IntegerLiteral { value: 4 }),
+                ])),
+                #[rustfmt::skip]
+                alternative: Some(Box::new(BlockStatement(vec![
+                    ExpressionStatement(IntegerLiteral { value: 5 }),
+                ]))),
+            })
+        )
+    }
+
     impl Display for Program {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             for stmt in &self.statements {
@@ -194,7 +258,10 @@ mod tests {
             use Statement::*;
             match self {
                 ExpressionStatement(exp) => {
-                    write!(f, "{}", exp)
+                    writeln!(f, "{}", exp)
+                }
+                BlockStatement(..) => {
+                    unimplemented!()
                 }
             }
         }
@@ -219,6 +286,9 @@ mod tests {
                     right,
                 } => {
                     write!(f, "({} {} {})", left, operator, right)
+                }
+                IfExpression { .. } => {
+                    unimplemented!()
                 }
             }
         }

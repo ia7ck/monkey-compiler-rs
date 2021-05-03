@@ -6,6 +6,7 @@ pub struct Program {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     ExpressionStatement(Expression),
+    BlockStatement(Vec<Statement>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,6 +25,11 @@ pub enum Expression {
         left: Box<Expression>,
         operator: InfixOperator,
         right: Box<Expression>,
+    },
+    IfExpression {
+        condition: Box<Expression>,
+        consequence: Box<Statement>,
+        alternative: Option<Box<Statement>>,
     },
 }
 
