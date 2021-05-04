@@ -1,7 +1,7 @@
 use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
 use crate::lexer::Lexer;
 use crate::token::Token;
-use anyhow::{bail, ensure, Result};
+use anyhow::{bail, Result};
 
 #[derive(PartialOrd, PartialEq)]
 enum Precedence {
@@ -55,6 +55,16 @@ impl<'a> Parser<'a> {
     }
     fn peek_token_is(&self, token: Token) -> bool {
         self.peek == token
+    }
+    fn expect_peek(&self, token: Token) -> Result<()> {
+        if !self.peek_token_is(token.clone()) {
+            bail!(
+                "expected next token to be {:?}, got {:?} instead",
+                token,
+                self.peek
+            );
+        }
+        Ok(())
     }
     pub fn parse(&mut self) -> Result<Program> {
         let mut statements = Vec::new();
@@ -111,10 +121,10 @@ impl<'a> Parser<'a> {
         Ok(exp)
     }
     fn parse_grouped_expression(&mut self) -> Result<Expression> {
-        ensure!(self.cur == Token::LPAREN); // (
+        assert_eq!(self.cur, Token::LPAREN); // (
         self.next_token();
         let exp = self.parse_expression(Precedence::LOWEST)?;
-        ensure!(self.peek == Token::RPAREN); // )
+        self.expect_peek(Token::RPAREN)?; // )
         self.next_token();
         Ok(exp)
     }
@@ -157,19 +167,25 @@ impl<'a> Parser<'a> {
         })
     }
     fn parse_if_expression(&mut self) -> Result<Expression> {
-        ensure!(self.peek == Token::LPAREN);
-        self.next_token();
+        self.expect_peek(Token::LPAREN)?; // (
+        self.next_token(); // self.cur <- LPAREN
+
         self.next_token();
         let condition = self.parse_expression(Precedence::LOWEST)?;
-        ensure!(self.peek == Token::RPAREN);
-        self.next_token();
-        ensure!(self.peek == Token::LBRACE);
-        self.next_token();
+
+        self.expect_peek(Token::RPAREN)?; // )
+        self.next_token(); // self.cur <- RPAREN
+
+        self.expect_peek(Token::LBRACE)?; // {
+        self.next_token(); // self.cur <- LBRACE
+
         let consequence = self.parse_block_statement()?;
         let alternative = if self.peek_token_is(Token::ELSE) {
             self.next_token();
-            ensure!(self.peek == Token::LBRACE);
-            self.next_token();
+
+            self.expect_peek(Token::LBRACE)?; // {
+            self.next_token(); // self.cur <- LBRACE
+
             let alt = self.parse_block_statement()?;
             Some(Box::new(alt))
         } else {
