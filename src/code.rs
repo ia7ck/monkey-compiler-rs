@@ -5,7 +5,7 @@ use byteorder::{BigEndian, ByteOrder};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::FromIterator;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
 pub struct Instructions(Vec<u8>);
@@ -22,12 +22,20 @@ impl Instructions {
     pub fn rest(&self, i: usize) -> &[u8] {
         &self.0[i..]
     }
+    pub fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
 }
 
 impl Index<usize> for Instructions {
     type Output = u8;
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
+    }
+}
+impl IndexMut<usize> for Instructions {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
 impl IntoIterator for Instructions {
@@ -102,6 +110,9 @@ pub enum Opcode {
     OpGreaterThan,
     OpMinus,
     OpBang,
+    OpJumpNotTruthy,
+    OpJump,
+    OpNull,
 }
 
 impl TryFrom<u8> for Opcode {
@@ -122,6 +133,9 @@ impl TryFrom<u8> for Opcode {
             10 => Ok(OpGreaterThan),
             11 => Ok(OpMinus),
             12 => Ok(OpBang),
+            13 => Ok(OpJumpNotTruthy),
+            14 => Ok(OpJump),
+            15 => Ok(OpNull),
             _ => Err("not found opcode"),
         }
     }
@@ -157,6 +171,9 @@ static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpGreaterThan, vec![]),
         Definition::new(OpMinus, vec![]),
         Definition::new(OpBang, vec![]),
+        Definition::new(OpJumpNotTruthy, vec![2]),
+        Definition::new(OpJump, vec![2]),
+        Definition::new(OpNull, vec![]),
     ];
     for (i, def) in definitions.iter().enumerate() {
         let op = Opcode::try_from(i as u8).unwrap();

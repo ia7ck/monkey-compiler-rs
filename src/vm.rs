@@ -9,6 +9,7 @@ const STACK_SIZE: usize = 2048;
 
 const TRUE: Object = Object::Boolean { value: true };
 const FALSE: Object = Object::Boolean { value: false };
+const NULL: Object = Object::Null;
 
 pub struct VM<'a> {
     instructions: &'a Instructions,
@@ -91,6 +92,22 @@ impl<'a> VM<'a> {
                 }
                 OpBang => {
                     self.execute_bang_operator()?;
+                    ip += 1;
+                }
+                OpJumpNotTruthy => {
+                    let pos = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2; // opcode (1byte) + operand (2byte)
+                    let condition = self.pop()?;
+                    if !Self::is_truthy(&condition) {
+                        ip = pos;
+                    }
+                }
+                OpJump => {
+                    let pos = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip = pos;
+                }
+                OpNull => {
+                    self.push(NULL)?;
                     ip += 1;
                 }
             }
@@ -195,6 +212,9 @@ impl<'a> VM<'a> {
                     self.push(TRUE)?;
                 }
             }
+            Null => {
+                self.push(TRUE)?;
+            }
             _ => {
                 self.push(FALSE)?;
             }
@@ -206,6 +226,13 @@ impl<'a> VM<'a> {
             TRUE
         } else {
             FALSE
+        }
+    }
+    fn is_truthy(obj: &Object) -> bool {
+        match obj {
+            Object::Boolean { value } => *value,
+            Object::Null => false,
+            _ => true,
         }
     }
 }
@@ -267,11 +294,39 @@ mod tests {
             ("!!true", true),
             ("!!false", false),
             ("!!5", true),
+            ("!(if (false) { 5; })", true),
         ];
         let tests = tests
             .into_iter()
             .map(|(input, value)| (input, Object::Boolean { value }))
             .collect();
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_conditionals() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer { value: $x }
+            };
+        }
+        macro_rules! null {
+            () => {
+                Object::Null
+            };
+        }
+        let tests = vec![
+            ("if (true) { 1 }", int!(1)),
+            ("if (true) { 1 } else { 2 }", int!(1)),
+            ("if (false) { 1 } else { 2 }", int!(2)),
+            ("if (1) { 2 }", int!(2)),
+            ("if (1 < 2) { 3 }", int!(3)),
+            ("if (1 < 2) { 3 } else { 4 }", int!(3)),
+            ("if (1 > 2) { 3 } else { 4 }", int!(4)),
+            ("if (1 > 2) { 3 }", null!()),
+            ("if (false) { 3 }", null!()),
+            ("if ((if (false) { 10 })) { 10 } else { 20 }", int!(20)),
+        ];
         run_vm_tests(tests);
     }
 
@@ -308,6 +363,9 @@ mod tests {
             Boolean { value } => {
                 test_boolean_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
+            }
+            Null => {
+                assert_eq!(Null, actual);
             }
         }
     }
