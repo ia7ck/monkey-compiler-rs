@@ -239,7 +239,6 @@ impl<'a> VM<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::Program;
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
     use crate::object::Object;
@@ -332,7 +331,9 @@ mod tests {
 
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
-            let program = parse(input);
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
             let mut compiler = Compiler::new();
             compiler
                 .compile(program)
@@ -345,12 +346,6 @@ mod tests {
                 .unwrap_or_else(|err| panic!("{:?}", err));
             test_expected_object(expected, stack_elem);
         }
-    }
-
-    fn parse(input: &str) -> Program {
-        let lexer = Lexer::new(input);
-        let mut parser = Parser::new(lexer);
-        parser.parse().unwrap()
     }
 
     fn test_expected_object(expected: Object, actual: Object) {

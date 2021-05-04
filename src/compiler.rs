@@ -215,7 +215,6 @@ pub struct Bytecode<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::Program;
     use crate::code::Opcode;
     use crate::code::{make, Instructions};
     use crate::compiler::Compiler;
@@ -396,7 +395,9 @@ mod tests {
 
     fn run_compiler_tests(tests: &[CompilerTestCase]) {
         for tt in tests {
-            let program = parse(tt.input);
+            let lexer = Lexer::new(tt.input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
             let mut compiler = Compiler::new();
             compiler
                 .compile(program)
@@ -405,12 +406,6 @@ mod tests {
             test_instructions(&tt.expected_instructions, &bytecode.instructions);
             test_constants(&tt.expected_constants, &bytecode.constants);
         }
-    }
-
-    fn parse(input: &str) -> Program {
-        let lexer = Lexer::new(input);
-        let mut parser = Parser::new(lexer);
-        parser.parse().unwrap()
     }
 
     fn test_instructions(expected: &[Instructions], actual: &Instructions) {
