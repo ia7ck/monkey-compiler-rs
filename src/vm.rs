@@ -1,9 +1,8 @@
-use crate::code::{read_uint16, Instructions, Opcode};
+use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::object::Object;
 use crate::object::Object::Integer;
 use anyhow::{bail, Result};
-use std::convert::TryFrom;
 
 const STACK_SIZE: usize = 2048;
 
@@ -57,7 +56,8 @@ impl<'a> VM<'a> {
         use Opcode::*;
         let mut ip = 0;
         while ip < self.instructions.len() {
-            let op = Opcode::try_from(self.instructions[ip]).unwrap();
+            let def = &DEFINITIONS[self.instructions[ip] as usize];
+            let op = def.opcode;
             match op {
                 OpConstant => {
                     let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;

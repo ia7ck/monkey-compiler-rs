@@ -1,8 +1,7 @@
 use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
-use crate::code::{make, Instructions, Opcode};
+use crate::code::{make, Instructions, Opcode, DEFINITIONS};
 use crate::object::Object;
 use anyhow::Result;
-use std::convert::TryFrom;
 
 pub struct Compiler {
     instructions: Instructions,
@@ -197,8 +196,8 @@ impl Compiler {
         }
     }
     fn change_operand(&mut self, op_pos: usize, operand: usize) {
-        let op = Opcode::try_from(self.instructions[op_pos]).unwrap();
-        let new_instruction = make(op, &[operand]);
+        let def = &DEFINITIONS[self.instructions[op_pos] as usize];
+        let new_instruction = make(def.opcode, &[operand]);
         self.replace_instruction(op_pos, new_instruction);
     }
     pub fn bytecode(&self) -> Bytecode {
