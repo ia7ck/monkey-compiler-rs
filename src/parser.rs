@@ -67,6 +67,8 @@ impl<'a> Parser<'a> {
     }
     fn parse_statement(&mut self) -> Result<Statement> {
         match self.cur {
+            // Token::LET => {},
+            // Token::RETURN => {},
             _ => {
                 let exp_stmt = self.parse_expression_statement()?;
                 Ok(exp_stmt)
