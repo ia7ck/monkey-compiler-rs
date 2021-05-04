@@ -1,7 +1,6 @@
 use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::object::Object;
-use crate::object::Object::Integer;
 use anyhow::{bail, Result};
 
 const STACK_SIZE: usize = 2048;
@@ -148,7 +147,7 @@ impl VM {
                 bail!("unknown integer operator: {:?}", op)
             }
         };
-        self.push(Integer { value: result })?;
+        self.push(Object::Integer { value: result })?;
         Ok(())
     }
     fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
