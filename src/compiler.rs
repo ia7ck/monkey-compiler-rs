@@ -184,7 +184,7 @@ impl Compiler {
         let last = self
             .last_instruction
             .as_ref()
-            .unwrap_or_else(|| panic!("not found last instruction"));
+            .unwrap_or_else(|| panic!("there is no last emitted instruction"));
         self.instructions.truncate(last.position);
         // self.last <- self.prev
         std::mem::swap(&mut self.last_instruction, &mut self.previous_instruction);
