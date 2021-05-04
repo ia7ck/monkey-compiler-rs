@@ -10,15 +10,15 @@ const TRUE: Object = Object::Boolean { value: true };
 const FALSE: Object = Object::Boolean { value: false };
 const NULL: Object = Object::Null;
 
-pub struct VM<'a> {
-    instructions: &'a Instructions,
-    constants: &'a [Object],
+pub struct VM {
+    instructions: Instructions,
+    constants: Vec<Object>,
     stack: Vec<Object>,
     last_popped: Option<Object>,
 }
 
-impl<'a> VM<'a> {
-    pub fn new(bytecode: &'a Bytecode) -> Self {
+impl VM {
+    pub fn new(bytecode: Bytecode) -> Self {
         Self {
             instructions: bytecode.instructions,
             constants: bytecode.constants,
@@ -339,7 +339,7 @@ mod tests {
                 .compile(program)
                 .unwrap_or_else(|err| panic!("compiler error: {:?}", err));
             let bytecode = compiler.bytecode();
-            let mut vm = VM::new(&bytecode);
+            let mut vm = VM::new(bytecode);
             vm.run().unwrap_or_else(|err| panic!("vm error: {:?}", err));
             let stack_elem = vm
                 .last_popped_stack_elem()

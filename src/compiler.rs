@@ -160,7 +160,7 @@ impl Compiler {
     }
     fn add_instruction(&mut self, instruction: Instructions) -> usize {
         let pos_new_instruction = self.instructions.len();
-        self.instructions.extend(instruction.iter().copied());
+        self.instructions.extend(instruction);
         pos_new_instruction
     }
     fn set_last_instruction(&mut self, op: Opcode, pos: usize) {
@@ -200,17 +200,17 @@ impl Compiler {
         let new_instruction = make(def.opcode, &[operand]);
         self.replace_instruction(op_pos, new_instruction);
     }
-    pub fn bytecode(&self) -> Bytecode {
+    pub fn bytecode(self) -> Bytecode {
         Bytecode {
-            instructions: &self.instructions,
-            constants: &self.constants,
+            instructions: self.instructions,
+            constants: self.constants,
         }
     }
 }
 
-pub struct Bytecode<'a> {
-    pub instructions: &'a Instructions,
-    pub constants: &'a [Object],
+pub struct Bytecode {
+    pub instructions: Instructions,
+    pub constants: Vec<Object>,
 }
 
 #[cfg(test)]
@@ -297,7 +297,7 @@ mod tests {
                 ],
             },
         ];
-        run_compiler_tests(&tests);
+        run_compiler_tests(tests);
     }
 
     #[test]
@@ -361,7 +361,7 @@ mod tests {
                 expected_instructions: vec![make(OpTrue, &[]), make(OpBang, &[]), make(OpPop, &[])],
             },
         ];
-        run_compiler_tests(&tests);
+        run_compiler_tests(tests);
     }
 
     #[test]
@@ -390,10 +390,10 @@ mod tests {
                 make(OpPop, &[]),
             ],
         }];
-        run_compiler_tests(&tests);
+        run_compiler_tests(tests);
     }
 
-    fn run_compiler_tests(tests: &[CompilerTestCase]) {
+    fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for tt in tests {
             let lexer = Lexer::new(tt.input);
             let mut parser = Parser::new(lexer);
@@ -403,12 +403,12 @@ mod tests {
                 .compile(program)
                 .unwrap_or_else(|err| panic!("compiler error: {:?}", err));
             let bytecode = compiler.bytecode();
-            test_instructions(&tt.expected_instructions, &bytecode.instructions);
-            test_constants(&tt.expected_constants, &bytecode.constants);
+            test_instructions(tt.expected_instructions, bytecode.instructions);
+            test_constants(tt.expected_constants, bytecode.constants);
         }
     }
 
-    fn test_instructions(expected: &[Instructions], actual: &Instructions) {
+    fn test_instructions(expected: Vec<Instructions>, actual: Instructions) {
         let expected = concat_instructions(expected);
         assert_eq!(
             expected.len(),
@@ -417,6 +417,8 @@ mod tests {
             expected,
             actual
         );
+        let expected: Vec<u8> = expected.into_iter().collect();
+        let actual: Vec<u8> = actual.into_iter().collect();
         for (i, (ex, ac)) in expected.iter().zip(actual.iter()).enumerate() {
             assert_eq!(
                 ex, ac,
@@ -426,15 +428,11 @@ mod tests {
         }
     }
 
-    fn concat_instructions(s: &[Instructions]) -> Instructions {
-        s.iter()
-            .map(|instruction| instruction.iter())
-            .flatten()
-            .copied()
-            .collect()
+    fn concat_instructions(s: Vec<Instructions>) -> Instructions {
+        s.into_iter().flatten().collect()
     }
 
-    fn test_constants(expected: &[Constant], actual: &[Object]) {
+    fn test_constants(expected: Vec<Constant>, actual: Vec<Object>) {
         use Constant::*;
         assert_eq!(expected.len(), actual.len(), "wrong number of constants.",);
         for (i, (ex, ac)) in expected.iter().zip(actual.iter()).enumerate() {

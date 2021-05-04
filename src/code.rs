@@ -15,9 +15,6 @@ impl Instructions {
     pub fn len(&self) -> usize {
         self.0.len()
     }
-    pub fn iter(&self) -> std::slice::Iter<'_, u8> {
-        self.0.iter()
-    }
     pub fn rest(&self, i: usize) -> &[u8] {
         &self.0[i..]
     }
@@ -232,7 +229,11 @@ mod tests {
                 tt.expected.len(),
                 instruction.len()
             );
-            for (i, (want_byte, got_byte)) in tt.expected.iter().zip(instruction.iter()).enumerate()
+            for (i, (want_byte, got_byte)) in tt
+                .expected
+                .into_iter()
+                .zip(instruction.into_iter())
+                .enumerate()
             {
                 assert_eq!(
                     want_byte, got_byte,
