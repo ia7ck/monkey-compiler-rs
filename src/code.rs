@@ -109,6 +109,8 @@ pub enum Opcode {
     OpJumpNotTruthy,
     OpJump,
     OpNull,
+    OpGetGlobal,
+    OpSetGlobal,
 }
 
 pub struct Definition {
@@ -144,6 +146,8 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpJumpNotTruthy, vec![2]),
         Definition::new(OpJump, vec![2]),
         Definition::new(OpNull, vec![]),
+        Definition::new(OpGetGlobal, vec![2]),
+        Definition::new(OpSetGlobal, vec![2]),
     ]
 });
 

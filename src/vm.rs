@@ -4,6 +4,7 @@ use crate::object::Object;
 use anyhow::{bail, Result};
 
 const STACK_SIZE: usize = 2048;
+const GLOBAL_SIZE: usize = 65536;
 
 const TRUE: Object = Object::Boolean { value: true };
 const FALSE: Object = Object::Boolean { value: false };
@@ -14,6 +15,7 @@ pub struct VM {
     constants: Vec<Object>,
     stack: Vec<Object>,
     last_popped: Option<Object>,
+    globals: Vec<Object>,
 }
 
 impl VM {
@@ -23,6 +25,7 @@ impl VM {
             constants: bytecode.constants,
             stack: Vec::with_capacity(STACK_SIZE),
             last_popped: None,
+            globals: vec![Object::Dummy; GLOBAL_SIZE],
         }
     }
     pub fn last_popped_stack_elem(&self) -> Option<&Object> {
@@ -103,6 +106,19 @@ impl VM {
                 OpNull => {
                     self.push(NULL)?;
                     ip += 1;
+                }
+                OpGetGlobal => {
+                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let obj = self.globals[global_index].clone();
+                    assert_ne!(obj, Object::Dummy);
+                    self.push(obj)?
+                }
+                OpSetGlobal => {
+                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let obj = self.pop()?;
+                    self.globals[global_index] = obj;
                 }
             }
         }
@@ -323,6 +339,20 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_global_let_statements() {
+        let tests = vec![
+            ("let one = 1; one", 1),
+            ("let one = 1; let two = 2; one + two;", 3),
+            ("let one = 1; let two = one + one; one + two;", 3),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::Integer { value }))
+            .collect();
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
@@ -356,6 +386,7 @@ mod tests {
             Null => {
                 assert_eq!(&NULL, actual);
             }
+            Dummy => unreachable!(),
         }
     }
 

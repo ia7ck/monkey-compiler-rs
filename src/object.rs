@@ -3,6 +3,7 @@ pub enum Object {
     Integer { value: i64 },
     Boolean { value: bool },
     Null,
+    Dummy,
 }
 
 impl Object {
@@ -12,6 +13,7 @@ impl Object {
             Integer { .. } => "INTEGER",
             Boolean { .. } => "BOOLEAN",
             Null => "NULL",
+            Dummy => unreachable!(),
         }
     }
 }

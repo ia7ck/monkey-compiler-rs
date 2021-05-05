@@ -93,7 +93,7 @@ impl<'a> Parser<'a> {
     fn parse_let_statement(&mut self) -> Result<Statement> {
         match &self.peek {
             Token::IDENT(literal) => {
-                let name = Expression::Identifier(literal.to_string());
+                let name = literal.to_string();
                 self.next_token(); // self.cur <- IDENT
 
                 self.expect_peek(&Token::ASSIGN)?; // =
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(
             stmt,
             &Statement::LetStatement {
-                name: Expression::Identifier("x".to_string()),
+                name: "x".to_string(),
                 value: Expression::IntegerLiteral(5)
             }
         );
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(
             stmt,
             &Statement::LetStatement {
-                name: Expression::Identifier("y".to_string()),
+                name: "y".to_string(),
                 value: Expression::Identifier("z".to_string()),
             }
         );
