@@ -89,12 +89,12 @@ impl Compiler {
                     }
                 }
             }
-            IntegerLiteral { value } => {
+            IntegerLiteral(value) => {
                 let integer = Integer { value };
                 let operands = &[self.add_constant(integer)];
                 self.emit(OpConstant, operands);
             }
-            Expression::Boolean { value } => {
+            Expression::Boolean(value) => {
                 if value {
                     self.emit(OpTrue, &[]);
                 } else {

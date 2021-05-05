@@ -93,9 +93,7 @@ impl<'a> Parser<'a> {
     fn parse_let_statement(&mut self) -> Result<Statement> {
         match &self.peek {
             Token::IDENT(literal) => {
-                let name = Expression::Identifier {
-                    value: literal.to_string(),
-                };
+                let name = Expression::Identifier(literal.to_string());
                 self.next_token(); // self.cur <- IDENT
 
                 self.expect_peek(&Token::ASSIGN)?; // =
@@ -128,17 +126,15 @@ impl<'a> Parser<'a> {
         use Expression::*;
         use Token::*;
         let mut exp = match &self.cur {
-            IDENT(literal) => Identifier {
-                value: literal.to_string(),
-            },
+            IDENT(literal) => Identifier(literal.to_string()),
             INT(literal) => {
                 let value = literal.parse::<i64>()?;
-                IntegerLiteral { value }
+                IntegerLiteral(value)
             }
             MINUS | BANG => self.parse_prefix_expression()?,
             LPAREN => self.parse_grouped_expression()?,
-            TRUE => Boolean { value: true },
-            FALSE => Boolean { value: false },
+            TRUE => Boolean(true),
+            FALSE => Boolean(false),
             IF => self.parse_if_expression()?,
             _ => {
                 bail!("cannot parse: {:?}", self.cur);
@@ -267,10 +263,8 @@ mod tests {
         assert_eq!(
             stmt,
             &Statement::LetStatement {
-                name: Box::new(Expression::Identifier {
-                    value: "x".to_string()
-                }),
-                value: Box::new(Expression::IntegerLiteral { value: 5 })
+                name: Box::new(Expression::Identifier("x".to_string())),
+                value: Box::new(Expression::IntegerLiteral(5))
             }
         );
 
@@ -278,12 +272,8 @@ mod tests {
         assert_eq!(
             stmt,
             &Statement::LetStatement {
-                name: Box::new(Expression::Identifier {
-                    value: "y".to_string()
-                }),
-                value: Box::new(Expression::Identifier {
-                    value: "z".to_string()
-                })
+                name: Box::new(Expression::Identifier("y".to_string())),
+                value: Box::new(Expression::Identifier("z".to_string())),
             }
         );
     }
@@ -296,7 +286,7 @@ mod tests {
         let stmt = &statements[0];
         assert_eq!(
             stmt,
-            &Statement::ExpressionStatement(Expression::IntegerLiteral { value: 123 })
+            &Statement::ExpressionStatement(Expression::IntegerLiteral(123))
         );
     }
 
@@ -312,17 +302,17 @@ mod tests {
             stmt,
             &ExpressionStatement(IfExpression {
                 condition: Box::new(InfixExpression {
-                    left: Box::new(IntegerLiteral { value: 1 }),
+                    left: Box::new(IntegerLiteral(1)),
                     operator: InfixOperator::LT,
-                    right: Box::new(IntegerLiteral { value: 2 })
+                    right: Box::new(IntegerLiteral(2))
                 }),
                 consequence: Box::new(BlockStatement(vec![
-                    ExpressionStatement(IntegerLiteral { value: 3 }),
-                    ExpressionStatement(IntegerLiteral { value: 4 }),
+                    ExpressionStatement(IntegerLiteral(3)),
+                    ExpressionStatement(IntegerLiteral(4)),
                 ])),
                 #[rustfmt::skip]
                 alternative: Some(Box::new(BlockStatement(vec![
-                    ExpressionStatement(IntegerLiteral { value: 5 }),
+                    ExpressionStatement(IntegerLiteral (5)),
                 ]))),
             })
         )
@@ -361,10 +351,10 @@ mod tests {
                 Identifier { .. } => {
                     unimplemented!()
                 }
-                IntegerLiteral { value } => {
+                IntegerLiteral(value) => {
                     write!(f, "{}", value)
                 }
-                Boolean { value } => {
+                Boolean(value) => {
                     write!(f, "{}", value)
                 }
                 PrefixExpression { operator, right } => {

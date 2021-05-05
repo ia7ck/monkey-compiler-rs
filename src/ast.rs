@@ -15,15 +15,9 @@ pub enum Statement {
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
-    Identifier {
-        value: String,
-    },
-    IntegerLiteral {
-        value: i64,
-    },
-    Boolean {
-        value: bool,
-    },
+    Identifier(String),
+    IntegerLiteral(i64),
+    Boolean(bool),
     PrefixExpression {
         operator: PrefixOperator,
         right: Box<Expression>,
