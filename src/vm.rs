@@ -6,8 +6,8 @@ use anyhow::{bail, Result};
 const STACK_SIZE: usize = 2048;
 const GLOBAL_SIZE: usize = 65536;
 
-const TRUE: Object = Object::Boolean { value: true };
-const FALSE: Object = Object::Boolean { value: false };
+const TRUE: Object = Object::Boolean(true);
+const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
 
 pub struct VM {
@@ -129,7 +129,7 @@ impl VM {
         let right = self.pop()?;
         let left = self.pop()?;
         match (left, right) {
-            (Integer { value: left }, Integer { value: right }) => {
+            (Integer(left), Integer(right)) => {
                 self.execute_binary_integer_operation(op, left, right)?;
             }
             (left, right) => {
@@ -158,7 +158,7 @@ impl VM {
                 bail!("unknown integer operator: {:?}", op)
             }
         };
-        self.push(Object::Integer { value: result })?;
+        self.push(Object::Integer(result))?;
         Ok(())
     }
     fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
@@ -167,7 +167,7 @@ impl VM {
         let right = self.pop()?;
         let left = self.pop()?;
         match (op, left, right) {
-            (op, Integer { value: left }, Integer { value: right }) => {
+            (op, Integer(left), Integer(right)) => {
                 self.execute_integer_comparison(op, left, right)?;
             }
             (op, left, right) if op == OpEqual => {
@@ -202,8 +202,8 @@ impl VM {
         use Object::*;
         let operand = self.pop()?;
         match operand {
-            Integer { value } => {
-                self.push(Integer { value: -value })?;
+            Integer(value) => {
+                self.push(Integer(-value))?;
             }
             _ => {
                 bail!("unsupported type for negation: {}", operand.r#type());
@@ -215,7 +215,7 @@ impl VM {
         use Object::*;
         let operand = self.pop()?;
         match operand {
-            Boolean { value } => {
+            Boolean(value) => {
                 if value {
                     self.push(FALSE)?;
                 } else {
@@ -240,7 +240,7 @@ impl VM {
     }
     fn is_truthy(obj: &Object) -> bool {
         match obj {
-            Object::Boolean { value } => *value,
+            Object::Boolean(value) => *value,
             Object::Null => false,
             _ => true,
         }
@@ -278,7 +278,7 @@ mod tests {
         ];
         let tests = tests
             .into_iter()
-            .map(|(input, value)| (input, Object::Integer { value }))
+            .map(|(input, value)| (input, Object::Integer(value)))
             .collect();
         run_vm_tests(tests);
     }
@@ -307,7 +307,7 @@ mod tests {
         ];
         let tests = tests
             .into_iter()
-            .map(|(input, value)| (input, Object::Boolean { value }))
+            .map(|(input, value)| (input, Object::Boolean(value)))
             .collect();
         run_vm_tests(tests);
     }
@@ -316,7 +316,7 @@ mod tests {
     fn test_conditionals() {
         macro_rules! int {
             ($x: expr) => {
-                Object::Integer { value: $x }
+                Object::Integer($x)
             };
         }
         macro_rules! null {
@@ -348,7 +348,7 @@ mod tests {
         ];
         let tests = tests
             .into_iter()
-            .map(|(input, value)| (input, Object::Integer { value }))
+            .map(|(input, value)| (input, Object::Integer(value)))
             .collect();
         run_vm_tests(tests);
     }
@@ -375,11 +375,11 @@ mod tests {
     fn test_expected_object(expected: &Object, actual: &Object) {
         use Object::*;
         match expected {
-            Integer { value } => {
+            Integer(value) => {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
             }
-            Boolean { value } => {
+            Boolean(value) => {
                 test_boolean_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
             }
@@ -392,7 +392,7 @@ mod tests {
 
     fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
         match actual {
-            Object::Integer { value } => {
+            Object::Integer(value) => {
                 if expected != value {
                     bail!("object has wrong value. want={}, got={}", expected, value);
                 }
@@ -410,7 +410,7 @@ mod tests {
 
     fn test_boolean_object(expected: &bool, actual: &Object) -> Result<()> {
         match actual {
-            Object::Boolean { value } => {
+            Object::Boolean(value) => {
                 ensure!(
                     expected == value,
                     "object has wrong value. want={}, got={}",

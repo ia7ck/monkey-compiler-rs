@@ -97,7 +97,7 @@ impl Compiler {
                 }
             }
             IntegerLiteral(value) => {
-                let integer = Integer { value };
+                let integer = Integer(value);
                 let operands = &[self.add_constant(integer)];
                 self.emit(OpConstant, operands);
             }
@@ -505,7 +505,7 @@ mod tests {
 
     fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
         match actual {
-            Object::Integer { value } => {
+            Object::Integer(value) => {
                 if expected != value {
                     bail!("object has wrong value. want={}, got={}", expected, value);
                 }
