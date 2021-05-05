@@ -47,17 +47,19 @@ impl<'a> Parser<'a> {
         parser
     }
     fn next_token(&mut self) {
-        self.cur = self.peek.clone();
+        // self.cur <- self.peek
+        // self.peek <- self.l.next()
+        std::mem::swap(&mut self.cur, &mut self.peek);
         self.peek = self.l.next().unwrap_or(Token::EOF);
     }
-    fn cur_token_is(&self, token: Token) -> bool {
-        self.cur == token
+    fn cur_token_is(&self, token: &Token) -> bool {
+        &self.cur == token
     }
-    fn peek_token_is(&self, token: Token) -> bool {
-        self.peek == token
+    fn peek_token_is(&self, token: &Token) -> bool {
+        &self.peek == token
     }
-    fn expect_peek(&self, token: Token) -> Result<()> {
-        if !self.peek_token_is(token.clone()) {
+    fn expect_peek(&self, token: &Token) -> Result<()> {
+        if !self.peek_token_is(token) {
             bail!(
                 "expected next token to be {:?}, got {:?} instead",
                 token,
@@ -68,7 +70,7 @@ impl<'a> Parser<'a> {
     }
     pub fn parse(&mut self) -> Result<Program> {
         let mut statements = Vec::new();
-        while !self.cur_token_is(Token::EOF) {
+        while !self.cur_token_is(&Token::EOF) {
             let stmt = self.parse_statement()?;
             statements.push(stmt);
             self.next_token();
@@ -87,7 +89,7 @@ impl<'a> Parser<'a> {
     }
     fn parse_expression_statement(&mut self) -> Result<Statement> {
         let exp = self.parse_expression(Precedence::LOWEST)?;
-        if self.peek_token_is(Token::SEMICOLON) {
+        if self.peek_token_is(&Token::SEMICOLON) {
             self.next_token();
         }
         Ok(Statement::ExpressionStatement(exp))
@@ -109,7 +111,7 @@ impl<'a> Parser<'a> {
                 bail!("cannot parse: {:?}", self.cur);
             }
         };
-        while !self.peek_token_is(Token::SEMICOLON) && precedence < self.peek.precedence() {
+        while !self.peek_token_is(&Token::SEMICOLON) && precedence < self.peek.precedence() {
             exp = match &self.peek {
                 PLUS | MINUS | ASTERISK | SLASH | LT | GT | EQ | NEQ => {
                     self.next_token();
@@ -124,7 +126,7 @@ impl<'a> Parser<'a> {
         assert_eq!(self.cur, Token::LPAREN); // (
         self.next_token();
         let exp = self.parse_expression(Precedence::LOWEST)?;
-        self.expect_peek(Token::RPAREN)?; // )
+        self.expect_peek(&Token::RPAREN)?; // )
         self.next_token();
         Ok(exp)
     }
@@ -167,23 +169,23 @@ impl<'a> Parser<'a> {
         })
     }
     fn parse_if_expression(&mut self) -> Result<Expression> {
-        self.expect_peek(Token::LPAREN)?; // (
+        self.expect_peek(&Token::LPAREN)?; // (
         self.next_token(); // self.cur <- LPAREN
 
         self.next_token();
         let condition = self.parse_expression(Precedence::LOWEST)?;
 
-        self.expect_peek(Token::RPAREN)?; // )
+        self.expect_peek(&Token::RPAREN)?; // )
         self.next_token(); // self.cur <- RPAREN
 
-        self.expect_peek(Token::LBRACE)?; // {
+        self.expect_peek(&Token::LBRACE)?; // {
         self.next_token(); // self.cur <- LBRACE
 
         let consequence = self.parse_block_statement()?;
-        let alternative = if self.peek_token_is(Token::ELSE) {
+        let alternative = if self.peek_token_is(&Token::ELSE) {
             self.next_token();
 
-            self.expect_peek(Token::LBRACE)?; // {
+            self.expect_peek(&Token::LBRACE)?; // {
             self.next_token(); // self.cur <- LBRACE
 
             let alt = self.parse_block_statement()?;
@@ -200,7 +202,7 @@ impl<'a> Parser<'a> {
     fn parse_block_statement(&mut self) -> Result<Statement> {
         self.next_token();
         let mut statements = Vec::new();
-        while !self.cur_token_is(Token::RBRACE) {
+        while !self.cur_token_is(&Token::RBRACE) {
             let stmt = self.parse_statement()?;
             statements.push(stmt);
             self.next_token();
@@ -227,10 +229,10 @@ mod tests {
         let program = parse("123;");
         let statements = program.statements;
         assert_eq!(statements.len(), 1);
-        let stmt = statements[0].clone();
+        let stmt = &statements[0];
         assert_eq!(
             stmt,
-            Statement::ExpressionStatement(Expression::IntegerLiteral { value: 123 })
+            &Statement::ExpressionStatement(Expression::IntegerLiteral { value: 123 })
         );
     }
 
@@ -241,10 +243,10 @@ mod tests {
         let program = parse("if (1 < 2) { 3; 4 } else { 5; };");
         let statements = program.statements;
         assert_eq!(statements.len(), 1);
-        let stmt = statements[0].clone();
+        let stmt = &statements[0];
         assert_eq!(
             stmt,
-            ExpressionStatement(IfExpression {
+            &ExpressionStatement(IfExpression {
                 condition: Box::new(InfixExpression {
                     left: Box::new(IntegerLiteral { value: 1 }),
                     operator: InfixOperator::LT,

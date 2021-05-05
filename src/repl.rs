@@ -38,8 +38,13 @@ pub fn start() {
                 let mut machine = VM::new(bytecode);
                 machine
                     .run()
-                    .map(|()| machine.last_popped_stack_elem())
                     .map_err(|err| format!("executing bytecode failed:\n {:?}", err))
+                    .and_then(|()| {
+                        machine
+                            .last_popped_stack_elem()
+                            .ok_or_else(|| "there is no last popped stack element".to_string())
+                            .map(|elem| elem.clone())
+                    })
             });
         match result {
             Ok(stack_top) => {

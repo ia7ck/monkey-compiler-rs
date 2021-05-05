@@ -3,13 +3,13 @@ pub struct Program {
     pub(crate) statements: Vec<Statement>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum Statement {
     ExpressionStatement(Expression),
     BlockStatement(Vec<Statement>),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum Expression {
     IntegerLiteral {
         value: i64,
@@ -33,7 +33,7 @@ pub enum Expression {
     },
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum InfixOperator {
     PLUS,
     MINUS,
@@ -45,7 +45,7 @@ pub enum InfixOperator {
     NEQ,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum PrefixOperator {
     MINUS,
     BANG,

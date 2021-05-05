@@ -25,13 +25,8 @@ impl VM {
             last_popped: None,
         }
     }
-    pub fn last_popped_stack_elem(&self) -> Result<Object> {
-        match self.last_popped.as_ref() {
-            Some(obj) => Ok(obj.clone()),
-            None => {
-                bail!("there is no last popped stack element");
-            }
-        }
+    pub fn last_popped_stack_elem(&self) -> Option<&Object> {
+        self.last_popped.as_ref()
     }
     fn push(&mut self, obj: Object) -> Result<()> {
         if self.stack.len() >= STACK_SIZE {
@@ -242,7 +237,7 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::object::Object;
     use crate::parser::Parser;
-    use crate::vm::VM;
+    use crate::vm::{NULL, VM};
     use anyhow::{bail, ensure, Result};
 
     #[test]
@@ -342,12 +337,12 @@ mod tests {
             vm.run().unwrap_or_else(|err| panic!("vm error: {:?}", err));
             let stack_elem = vm
                 .last_popped_stack_elem()
-                .unwrap_or_else(|err| panic!("{:?}", err));
-            test_expected_object(expected, stack_elem);
+                .unwrap_or_else(|| panic!("there is no last popped stack element"));
+            test_expected_object(&expected, stack_elem);
         }
     }
 
-    fn test_expected_object(expected: Object, actual: Object) {
+    fn test_expected_object(expected: &Object, actual: &Object) {
         use Object::*;
         match expected {
             Integer { value } => {
@@ -359,12 +354,12 @@ mod tests {
                     .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
             }
             Null => {
-                assert_eq!(Null, actual);
+                assert_eq!(&NULL, actual);
             }
         }
     }
 
-    fn test_integer_object(expected: i64, actual: Object) -> Result<()> {
+    fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
         match actual {
             Object::Integer { value } => {
                 if expected != value {
@@ -382,7 +377,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_boolean_object(expected: bool, actual: Object) -> Result<()> {
+    fn test_boolean_object(expected: &bool, actual: &Object) -> Result<()> {
         match actual {
             Object::Boolean { value } => {
                 ensure!(
