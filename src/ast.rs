@@ -5,12 +5,19 @@ pub struct Program {
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
+    LetStatement {
+        name: Box<Expression>,
+        value: Box<Expression>,
+    },
     ExpressionStatement(Expression),
     BlockStatement(Vec<Statement>),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
+    Identifier {
+        value: String,
+    },
     IntegerLiteral {
         value: i64,
     },

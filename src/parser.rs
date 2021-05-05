@@ -79,11 +79,41 @@ impl<'a> Parser<'a> {
     }
     fn parse_statement(&mut self) -> Result<Statement> {
         match self.cur {
-            // Token::LET => {},
+            Token::LET => {
+                let let_stmt = self.parse_let_statement()?;
+                Ok(let_stmt)
+            }
             // Token::RETURN => {},
             _ => {
                 let exp_stmt = self.parse_expression_statement()?;
                 Ok(exp_stmt)
+            }
+        }
+    }
+    fn parse_let_statement(&mut self) -> Result<Statement> {
+        match &self.peek {
+            Token::IDENT(literal) => {
+                let name = Expression::Identifier {
+                    value: literal.to_string(),
+                };
+                self.next_token(); // self.cur <- IDENT
+
+                self.expect_peek(&Token::ASSIGN)?; // =
+                self.next_token(); // self.cur <- ASSIGN
+
+                self.next_token();
+                let value = self.parse_expression(Precedence::LOWEST)?;
+
+                if self.peek_token_is(&Token::SEMICOLON) {
+                    self.next_token();
+                }
+                Ok(Statement::LetStatement {
+                    name: Box::new(name),
+                    value: Box::new(value),
+                })
+            }
+            peek => {
+                bail!("expected next token to be LET, got {:?} instead", peek)
             }
         }
     }
@@ -98,6 +128,9 @@ impl<'a> Parser<'a> {
         use Expression::*;
         use Token::*;
         let mut exp = match &self.cur {
+            IDENT(literal) => Identifier {
+                value: literal.to_string(),
+            },
             INT(literal) => {
                 let value = literal.parse::<i64>()?;
                 IntegerLiteral { value }
@@ -225,6 +258,37 @@ mod tests {
     }
 
     #[test]
+    fn test_let_statements() {
+        let program = parse("let x = 5; let y = z;");
+        let statements = program.statements;
+        assert_eq!(statements.len(), 2);
+
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::LetStatement {
+                name: Box::new(Expression::Identifier {
+                    value: "x".to_string()
+                }),
+                value: Box::new(Expression::IntegerLiteral { value: 5 })
+            }
+        );
+
+        let stmt = &statements[1];
+        assert_eq!(
+            stmt,
+            &Statement::LetStatement {
+                name: Box::new(Expression::Identifier {
+                    value: "y".to_string()
+                }),
+                value: Box::new(Expression::Identifier {
+                    value: "z".to_string()
+                })
+            }
+        );
+    }
+
+    #[test]
     fn test_integer_literal_expression() {
         let program = parse("123;");
         let statements = program.statements;
@@ -277,6 +341,9 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
             match self {
+                LetStatement { .. } => {
+                    unimplemented!()
+                }
                 ExpressionStatement(exp) => {
                     writeln!(f, "{}", exp)
                 }
@@ -291,6 +358,9 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Expression::*;
             match self {
+                Identifier { .. } => {
+                    unimplemented!()
+                }
                 IntegerLiteral { value } => {
                     write!(f, "{}", value)
                 }

@@ -56,11 +56,11 @@ impl<'a> Iterator for Lexer<'a> {
             '=' => {
                 self.read_char();
                 match self.cur {
-                    Some(c) if c == '=' => {
+                    Some('=') => {
                         self.read_char();
                         EQ
                     }
-                    _ => todo!(),
+                    _ => ASSIGN,
                 }
             }
             '+' => {
@@ -143,7 +143,8 @@ mod tests {
 34 * (5 + 6);
 true; false;
 1 == 1; 2 != 3; 1 < 2; 2 > 1;
-if (1 < 2) { true } else { false };"#;
+if (1 < 2) { true } else { false };
+let two = 2;"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -190,6 +191,11 @@ if (1 < 2) { true } else { false };"#;
             LBRACE,
             FALSE,
             RBRACE,
+            SEMICOLON,
+            LET,
+            IDENT("two".to_string()),
+            ASSIGN,
+            INT("2".to_string()),
             SEMICOLON,
         ];
         let lexer = Lexer::new(input);

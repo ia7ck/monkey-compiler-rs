@@ -33,6 +33,7 @@ impl Compiler {
     fn compile_statement(&mut self, statement: Statement) -> Result<()> {
         use Statement::*;
         match statement {
+            LetStatement { .. } => todo!(),
             ExpressionStatement(exp) => {
                 self.compile_expression(exp)?;
                 self.emit(Opcode::OpPop, &[]);
@@ -145,6 +146,7 @@ impl Compiler {
                 let after_alternative_pos = self.instructions.len();
                 self.change_operand(jump_pos, after_alternative_pos);
             }
+            Identifier { .. } => todo!(),
         }
         Ok(())
     }
