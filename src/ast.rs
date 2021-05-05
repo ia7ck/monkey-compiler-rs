@@ -5,10 +5,7 @@ pub struct Program {
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
-    LetStatement {
-        name: Box<Expression>,
-        value: Box<Expression>,
-    },
+    LetStatement { name: Expression, value: Expression },
     ExpressionStatement(Expression),
     BlockStatement(Vec<Statement>),
 }

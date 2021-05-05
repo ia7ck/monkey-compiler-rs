@@ -105,10 +105,7 @@ impl<'a> Parser<'a> {
                 if self.peek_token_is(&Token::SEMICOLON) {
                     self.next_token();
                 }
-                Ok(Statement::LetStatement {
-                    name: Box::new(name),
-                    value: Box::new(value),
-                })
+                Ok(Statement::LetStatement { name, value })
             }
             peek => {
                 bail!("expected next token to be LET, got {:?} instead", peek)
@@ -263,8 +260,8 @@ mod tests {
         assert_eq!(
             stmt,
             &Statement::LetStatement {
-                name: Box::new(Expression::Identifier("x".to_string())),
-                value: Box::new(Expression::IntegerLiteral(5))
+                name: Expression::Identifier("x".to_string()),
+                value: Expression::IntegerLiteral(5)
             }
         );
 
@@ -272,8 +269,8 @@ mod tests {
         assert_eq!(
             stmt,
             &Statement::LetStatement {
-                name: Box::new(Expression::Identifier("y".to_string())),
-                value: Box::new(Expression::Identifier("z".to_string())),
+                name: Expression::Identifier("y".to_string()),
+                value: Expression::Identifier("z".to_string()),
             }
         );
     }
