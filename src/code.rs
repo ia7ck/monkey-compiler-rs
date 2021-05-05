@@ -2,10 +2,9 @@ use once_cell::sync::Lazy;
 
 use anyhow::{anyhow, Result};
 use byteorder::{BigEndian, ByteOrder};
-use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::FromIterator;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
 pub struct Instructions(Vec<u8>);
@@ -16,11 +15,11 @@ impl Instructions {
     pub fn len(&self) -> usize {
         self.0.len()
     }
-    pub fn iter(&self) -> std::slice::Iter<'_, u8> {
-        self.0.iter()
-    }
     pub fn rest(&self, i: usize) -> &[u8] {
         &self.0[i..]
+    }
+    pub fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
     }
 }
 
@@ -28,6 +27,11 @@ impl Index<usize> for Instructions {
     type Output = u8;
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
+    }
+}
+impl IndexMut<usize> for Instructions {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
 impl IntoIterator for Instructions {
@@ -102,33 +106,13 @@ pub enum Opcode {
     OpGreaterThan,
     OpMinus,
     OpBang,
-}
-
-impl TryFrom<u8> for Opcode {
-    type Error = &'static str;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        use Opcode::*;
-        match value {
-            0 => Ok(OpConstant),
-            1 => Ok(OpAdd),
-            2 => Ok(OpPop),
-            3 => Ok(OpSub),
-            4 => Ok(OpMul),
-            5 => Ok(OpDiv),
-            6 => Ok(OpTrue),
-            7 => Ok(OpFalse),
-            8 => Ok(OpEqual),
-            9 => Ok(OpNotEqual),
-            10 => Ok(OpGreaterThan),
-            11 => Ok(OpMinus),
-            12 => Ok(OpBang),
-            _ => Err("not found opcode"),
-        }
-    }
+    OpJumpNotTruthy,
+    OpJump,
+    OpNull,
 }
 
 pub struct Definition {
-    opcode: Opcode,
+    pub(crate) opcode: Opcode,
     operand_widths: Vec<usize>,
 }
 
@@ -141,9 +125,9 @@ impl Definition {
     }
 }
 
-static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
+pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
     use Opcode::*;
-    let definitions = vec![
+    vec![
         Definition::new(OpConstant, vec![2]),
         Definition::new(OpAdd, vec![]),
         Definition::new(OpPop, vec![]),
@@ -157,12 +141,10 @@ static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpGreaterThan, vec![]),
         Definition::new(OpMinus, vec![]),
         Definition::new(OpBang, vec![]),
-    ];
-    for (i, def) in definitions.iter().enumerate() {
-        let op = Opcode::try_from(i as u8).unwrap();
-        assert_eq!(op, def.opcode);
-    }
-    definitions
+        Definition::new(OpJumpNotTruthy, vec![2]),
+        Definition::new(OpJump, vec![2]),
+        Definition::new(OpNull, vec![]),
+    ]
 });
 
 pub fn lookup<'a>(op: u8) -> Result<&'a Definition> {
@@ -247,7 +229,11 @@ mod tests {
                 tt.expected.len(),
                 instruction.len()
             );
-            for (i, (want_byte, got_byte)) in tt.expected.iter().zip(instruction.iter()).enumerate()
+            for (i, (want_byte, got_byte)) in tt
+                .expected
+                .into_iter()
+                .zip(instruction.into_iter())
+                .enumerate()
             {
                 assert_eq!(
                     want_byte, got_byte,

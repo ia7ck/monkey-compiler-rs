@@ -109,6 +109,14 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 RPAREN
             }
+            '{' => {
+                self.read_char();
+                LBRACE
+            }
+            '}' => {
+                self.read_char();
+                RBRACE
+            }
             c if c.is_ascii_digit() => INT(self.read_number()),
             c if c.is_ascii_alphabetic() => {
                 let literal = self.read_identifier();
@@ -134,7 +142,8 @@ mod tests {
         let input = r#"1 + 2;
 34 * (5 + 6);
 true; false;
-1 == 1; 2 != 3; 1 < 2; 2 > 1"#;
+1 == 1; 2 != 3; 1 < 2; 2 > 1;
+if (1 < 2) { true } else { false };"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -167,6 +176,21 @@ true; false;
             INT("2".to_string()),
             GT,
             INT("1".to_string()),
+            SEMICOLON,
+            IF,
+            LPAREN,
+            INT("1".to_string()),
+            LT,
+            INT("2".to_string()),
+            RPAREN,
+            LBRACE,
+            TRUE,
+            RBRACE,
+            ELSE,
+            LBRACE,
+            FALSE,
+            RBRACE,
+            SEMICOLON,
         ];
         let lexer = Lexer::new(input);
         let tokens: Vec<Token> = lexer.collect();

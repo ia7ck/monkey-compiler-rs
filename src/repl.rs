@@ -35,7 +35,7 @@ pub fn start() {
                     .map_err(|err| format!("compilation failed:\n {:?}", err))
             })
             .and_then(|bytecode| {
-                let mut machine = VM::new(&bytecode);
+                let mut machine = VM::new(bytecode);
                 machine
                     .run()
                     .map(|()| machine.last_popped_stack_elem())

@@ -2,6 +2,7 @@
 pub enum Object {
     Integer { value: i64 },
     Boolean { value: bool },
+    Null,
 }
 
 impl Object {
@@ -10,6 +11,7 @@ impl Object {
         match self {
             Integer { .. } => "INTEGER",
             Boolean { .. } => "BOOLEAN",
+            Null => "NULL",
         }
     }
 }
