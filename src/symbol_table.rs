@@ -12,6 +12,7 @@ pub struct Symbol {
     pub(crate) index: usize,
 }
 
+#[derive(Clone)]
 pub struct SymbolTable {
     store: HashMap<String, Symbol>,
     num_definitions: usize,

@@ -4,7 +4,7 @@ use crate::object::Object;
 use anyhow::{bail, Result};
 
 const STACK_SIZE: usize = 2048;
-const GLOBAL_SIZE: usize = 65536;
+pub(crate) const GLOBAL_SIZE: usize = 65536;
 
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
@@ -15,7 +15,7 @@ pub struct VM {
     constants: Vec<Object>,
     stack: Vec<Object>,
     last_popped: Option<Object>,
-    globals: Vec<Object>,
+    pub(crate) globals: Vec<Object>,
 }
 
 impl VM {
@@ -27,6 +27,11 @@ impl VM {
             last_popped: None,
             globals: vec![Object::Dummy; GLOBAL_SIZE],
         }
+    }
+    pub fn new_with_global_store(bytecode: Bytecode, globals: &[Object]) -> Self {
+        let mut machine = VM::new(bytecode);
+        machine.globals = globals.to_vec();
+        machine
     }
     pub fn last_popped_stack_elem(&self) -> Option<&Object> {
         self.last_popped.as_ref()

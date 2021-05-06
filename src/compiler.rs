@@ -6,10 +6,10 @@ use anyhow::{bail, Result};
 
 pub struct Compiler {
     instructions: Instructions,
-    constants: Vec<Object>,
+    pub(crate) constants: Vec<Object>,
     last_instruction: Option<EmittedInstruction>,
     previous_instruction: Option<EmittedInstruction>,
-    symbol_table: SymbolTable,
+    pub(crate) symbol_table: SymbolTable,
 }
 
 struct EmittedInstruction {
@@ -26,6 +26,12 @@ impl Compiler {
             previous_instruction: None,
             symbol_table: SymbolTable::new(),
         }
+    }
+    pub fn new_with_state(symbol_table: &SymbolTable, constants: &[Object]) -> Self {
+        let mut compiler = Self::new();
+        compiler.symbol_table = symbol_table.clone();
+        compiler.constants = constants.to_vec();
+        compiler
     }
     pub fn compile(&mut self, program: Program) -> Result<()> {
         for stmt in program.statements {
