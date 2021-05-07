@@ -1,8 +1,9 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Object {
-    Integer { value: i64 },
-    Boolean { value: bool },
+    Integer(i64),
+    Boolean(bool),
     Null,
+    Dummy,
 }
 
 impl Object {
@@ -12,6 +13,7 @@ impl Object {
             Integer { .. } => "INTEGER",
             Boolean { .. } => "BOOLEAN",
             Null => "NULL",
+            Dummy => unreachable!(),
         }
     }
 }

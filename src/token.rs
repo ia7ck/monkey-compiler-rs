@@ -1,10 +1,12 @@
-#[derive(Eq, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Token {
     ILLEGAL(char),
     EOF,
 
+    IDENT(String), // foobar, x, y, ...
     INT(String),
 
+    ASSIGN,   // =
     PLUS,     // +
     MINUS,    // -
     BANG,     // !
@@ -24,6 +26,7 @@ pub enum Token {
     LBRACE, // {
     RBRACE, // }
 
+    LET,
     TRUE,
     FALSE,
     IF,
@@ -33,10 +36,11 @@ pub enum Token {
 pub fn lookup_identifier(ident: &str) -> Token {
     use Token::*;
     match ident {
+        "let" => LET,
         "true" => TRUE,
         "false" => FALSE,
         "if" => IF,
         "else" => ELSE,
-        _ => todo!(),
+        _ => IDENT(ident.to_string()),
     }
 }

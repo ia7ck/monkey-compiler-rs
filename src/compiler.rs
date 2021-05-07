@@ -1,13 +1,15 @@
 use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
 use crate::code::{make, Instructions, Opcode, DEFINITIONS};
 use crate::object::Object;
-use anyhow::Result;
+use crate::symbol_table::SymbolTable;
+use anyhow::{bail, Result};
 
 pub struct Compiler {
     instructions: Instructions,
     constants: Vec<Object>,
     last_instruction: Option<EmittedInstruction>,
     previous_instruction: Option<EmittedInstruction>,
+    symbol_table: SymbolTable,
 }
 
 struct EmittedInstruction {
@@ -22,10 +24,17 @@ impl Compiler {
             constants: vec![],
             last_instruction: None,
             previous_instruction: None,
+            symbol_table: SymbolTable::new(),
         }
     }
+    pub fn new_with_state(symbol_table: &SymbolTable, constants: &[Object]) -> Self {
+        let mut compiler = Self::new();
+        compiler.symbol_table = symbol_table.clone();
+        compiler.constants = constants.to_vec();
+        compiler
+    }
     pub fn compile(&mut self, program: Program) -> Result<()> {
-        for stmt in program.statements {
+        for stmt in program.statements() {
             self.compile_statement(stmt)?;
         }
         Ok(())
@@ -33,6 +42,11 @@ impl Compiler {
     fn compile_statement(&mut self, statement: Statement) -> Result<()> {
         use Statement::*;
         match statement {
+            LetStatement { name, value } => {
+                self.compile_expression(value)?;
+                let symbol = self.symbol_table.define(&name);
+                self.emit(Opcode::OpSetGlobal, &[symbol.index()]);
+            }
             ExpressionStatement(exp) => {
                 self.compile_expression(exp)?;
                 self.emit(Opcode::OpPop, &[]);
@@ -88,12 +102,12 @@ impl Compiler {
                     }
                 }
             }
-            IntegerLiteral { value } => {
-                let integer = Integer { value };
+            IntegerLiteral(value) => {
+                let integer = Integer(value);
                 let operands = &[self.add_constant(integer)];
                 self.emit(OpConstant, operands);
             }
-            Expression::Boolean { value } => {
+            Expression::Boolean(value) => {
                 if value {
                     self.emit(OpTrue, &[]);
                 } else {
@@ -144,6 +158,14 @@ impl Compiler {
 
                 let after_alternative_pos = self.instructions.len();
                 self.change_operand(jump_pos, after_alternative_pos);
+            }
+            Identifier(name) => {
+                if let Some(symbol) = self.symbol_table.resolve(&name) {
+                    let index = symbol.index();
+                    self.emit(Opcode::OpGetGlobal, &[index]);
+                } else {
+                    bail!("undefined variable {}", name);
+                }
             }
         }
         Ok(())
@@ -197,8 +219,14 @@ impl Compiler {
     }
     fn change_operand(&mut self, op_pos: usize, operand: usize) {
         let def = &DEFINITIONS[self.instructions[op_pos] as usize];
-        let new_instruction = make(def.opcode, &[operand]);
+        let new_instruction = make(def.opcode(), &[operand]);
         self.replace_instruction(op_pos, new_instruction);
+    }
+    pub fn constants(&self) -> &Vec<Object> {
+        &self.constants
+    }
+    pub fn symbol_table(&self) -> &SymbolTable {
+        &self.symbol_table
     }
     pub fn bytecode(self) -> Bytecode {
         Bytecode {
@@ -217,6 +245,7 @@ pub struct Bytecode {
 mod tests {
     use crate::code::Opcode;
     use crate::code::{make, Instructions};
+    use crate::compiler::tests::Constant::Integer;
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
     use crate::object::Object;
@@ -393,6 +422,46 @@ mod tests {
         run_compiler_tests(tests);
     }
 
+    #[test]
+    fn test_global_let_statements() {
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "let three = 3; let four = 4;",
+                expected_constants: vec![Integer(3), Integer(4)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpSetGlobal, &[1]),
+                ],
+            },
+            CompilerTestCase {
+                input: "let three = 3; three;",
+                expected_constants: vec![Integer(3)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpGetGlobal, &[0]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "let three = 3; let t = three; t;",
+                expected_constants: vec![Integer(3)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpGetGlobal, &[0]),
+                    make(OpSetGlobal, &[1]),
+                    make(OpGetGlobal, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
     fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for tt in tests {
             let lexer = Lexer::new(tt.input);
@@ -448,7 +517,7 @@ mod tests {
 
     fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
         match actual {
-            Object::Integer { value } => {
+            Object::Integer(value) => {
                 if expected != value {
                     bail!("object has wrong value. want={}, got={}", expected, value);
                 }

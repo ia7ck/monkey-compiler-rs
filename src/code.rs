@@ -109,10 +109,12 @@ pub enum Opcode {
     OpJumpNotTruthy,
     OpJump,
     OpNull,
+    OpGetGlobal,
+    OpSetGlobal,
 }
 
 pub struct Definition {
-    pub(crate) opcode: Opcode,
+    opcode: Opcode,
     operand_widths: Vec<usize>,
 }
 
@@ -122,6 +124,9 @@ impl Definition {
             opcode,
             operand_widths,
         }
+    }
+    pub fn opcode(&self) -> Opcode {
+        self.opcode
     }
 }
 
@@ -144,6 +149,8 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpJumpNotTruthy, vec![2]),
         Definition::new(OpJump, vec![2]),
         Definition::new(OpNull, vec![]),
+        Definition::new(OpGetGlobal, vec![2]),
+        Definition::new(OpSetGlobal, vec![2]),
     ]
 });
 

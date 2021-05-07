@@ -1,22 +1,29 @@
 #[derive(Debug)]
 pub struct Program {
-    pub(crate) statements: Vec<Statement>,
+    statements: Vec<Statement>,
+}
+
+impl Program {
+    pub fn new(statements: Vec<Statement>) -> Self {
+        Self { statements }
+    }
+    pub fn statements(self) -> Vec<Statement> {
+        self.statements
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
+    LetStatement { name: String, value: Expression },
     ExpressionStatement(Expression),
     BlockStatement(Vec<Statement>),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
-    IntegerLiteral {
-        value: i64,
-    },
-    Boolean {
-        value: bool,
-    },
+    Identifier(String),
+    IntegerLiteral(i64),
+    Boolean(bool),
     PrefixExpression {
         operator: PrefixOperator,
         right: Box<Expression>,

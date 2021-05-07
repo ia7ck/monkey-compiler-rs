@@ -5,5 +5,6 @@ mod lexer;
 mod object;
 mod parser;
 pub mod repl;
+mod symbol_table;
 mod token;
 mod vm;

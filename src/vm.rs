@@ -4,9 +4,10 @@ use crate::object::Object;
 use anyhow::{bail, Result};
 
 const STACK_SIZE: usize = 2048;
+pub(crate) const GLOBAL_SIZE: usize = 65536;
 
-const TRUE: Object = Object::Boolean { value: true };
-const FALSE: Object = Object::Boolean { value: false };
+const TRUE: Object = Object::Boolean(true);
+const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
 
 pub struct VM {
@@ -14,6 +15,7 @@ pub struct VM {
     constants: Vec<Object>,
     stack: Vec<Object>,
     last_popped: Option<Object>,
+    globals: Vec<Object>,
 }
 
 impl VM {
@@ -23,7 +25,13 @@ impl VM {
             constants: bytecode.constants,
             stack: Vec::with_capacity(STACK_SIZE),
             last_popped: None,
+            globals: vec![Object::Dummy; GLOBAL_SIZE],
         }
+    }
+    pub fn new_with_global_store(bytecode: Bytecode, globals: &[Object]) -> Self {
+        let mut machine = VM::new(bytecode);
+        machine.globals = globals.to_vec();
+        machine
     }
     pub fn last_popped_stack_elem(&self) -> Option<&Object> {
         self.last_popped.as_ref()
@@ -51,7 +59,7 @@ impl VM {
         let mut ip = 0;
         while ip < self.instructions.len() {
             let def = &DEFINITIONS[self.instructions[ip] as usize];
-            let op = def.opcode;
+            let op = def.opcode();
             match op {
                 OpConstant => {
                     let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
@@ -104,6 +112,19 @@ impl VM {
                     self.push(NULL)?;
                     ip += 1;
                 }
+                OpGetGlobal => {
+                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let obj = self.globals[global_index].clone();
+                    assert_ne!(obj, Object::Dummy);
+                    self.push(obj)?
+                }
+                OpSetGlobal => {
+                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let obj = self.pop()?;
+                    self.globals[global_index] = obj;
+                }
             }
         }
         Ok(())
@@ -113,7 +134,7 @@ impl VM {
         let right = self.pop()?;
         let left = self.pop()?;
         match (left, right) {
-            (Integer { value: left }, Integer { value: right }) => {
+            (Integer(left), Integer(right)) => {
                 self.execute_binary_integer_operation(op, left, right)?;
             }
             (left, right) => {
@@ -142,7 +163,7 @@ impl VM {
                 bail!("unknown integer operator: {:?}", op)
             }
         };
-        self.push(Object::Integer { value: result })?;
+        self.push(Object::Integer(result))?;
         Ok(())
     }
     fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
@@ -151,7 +172,7 @@ impl VM {
         let right = self.pop()?;
         let left = self.pop()?;
         match (op, left, right) {
-            (op, Integer { value: left }, Integer { value: right }) => {
+            (op, Integer(left), Integer(right)) => {
                 self.execute_integer_comparison(op, left, right)?;
             }
             (op, left, right) if op == OpEqual => {
@@ -186,8 +207,8 @@ impl VM {
         use Object::*;
         let operand = self.pop()?;
         match operand {
-            Integer { value } => {
-                self.push(Integer { value: -value })?;
+            Integer(value) => {
+                self.push(Integer(-value))?;
             }
             _ => {
                 bail!("unsupported type for negation: {}", operand.r#type());
@@ -199,7 +220,7 @@ impl VM {
         use Object::*;
         let operand = self.pop()?;
         match operand {
-            Boolean { value } => {
+            Boolean(value) => {
                 if value {
                     self.push(FALSE)?;
                 } else {
@@ -224,10 +245,13 @@ impl VM {
     }
     fn is_truthy(obj: &Object) -> bool {
         match obj {
-            Object::Boolean { value } => *value,
+            Object::Boolean(value) => *value,
             Object::Null => false,
             _ => true,
         }
+    }
+    pub fn globals(self) -> Vec<Object> {
+        self.globals
     }
 }
 
@@ -262,7 +286,7 @@ mod tests {
         ];
         let tests = tests
             .into_iter()
-            .map(|(input, value)| (input, Object::Integer { value }))
+            .map(|(input, value)| (input, Object::Integer(value)))
             .collect();
         run_vm_tests(tests);
     }
@@ -291,7 +315,7 @@ mod tests {
         ];
         let tests = tests
             .into_iter()
-            .map(|(input, value)| (input, Object::Boolean { value }))
+            .map(|(input, value)| (input, Object::Boolean(value)))
             .collect();
         run_vm_tests(tests);
     }
@@ -300,7 +324,7 @@ mod tests {
     fn test_conditionals() {
         macro_rules! int {
             ($x: expr) => {
-                Object::Integer { value: $x }
+                Object::Integer($x)
             };
         }
         macro_rules! null {
@@ -320,6 +344,20 @@ mod tests {
             ("if (false) { 3 }", null!()),
             ("if ((if (false) { 10 })) { 10 } else { 20 }", int!(20)),
         ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_global_let_statements() {
+        let tests = vec![
+            ("let one = 1; one", 1),
+            ("let one = 1; let two = 2; one + two;", 3),
+            ("let one = 1; let two = one + one; one + two;", 3),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::Integer(value)))
+            .collect();
         run_vm_tests(tests);
     }
 
@@ -345,23 +383,24 @@ mod tests {
     fn test_expected_object(expected: &Object, actual: &Object) {
         use Object::*;
         match expected {
-            Integer { value } => {
+            Integer(value) => {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
             }
-            Boolean { value } => {
+            Boolean(value) => {
                 test_boolean_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
             }
             Null => {
                 assert_eq!(&NULL, actual);
             }
+            Dummy => unreachable!(),
         }
     }
 
     fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
         match actual {
-            Object::Integer { value } => {
+            Object::Integer(value) => {
                 if expected != value {
                     bail!("object has wrong value. want={}, got={}", expected, value);
                 }
@@ -379,7 +418,7 @@ mod tests {
 
     fn test_boolean_object(expected: &bool, actual: &Object) -> Result<()> {
         match actual {
-            Object::Boolean { value } => {
+            Object::Boolean(value) => {
                 ensure!(
                     expected == value,
                     "object has wrong value. want={}, got={}",
