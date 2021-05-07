@@ -5,6 +5,7 @@ pub enum Token {
 
     IDENT(String), // foobar, x, y, ...
     INT(String),
+    STRING(String),
 
     ASSIGN,   // =
     PLUS,     // +

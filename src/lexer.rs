@@ -27,6 +27,20 @@ impl<'a> Lexer<'a> {
             self.read_char();
         }
     }
+    fn read_string(&mut self) -> String {
+        assert_eq!(self.cur, Some('"'));
+        self.read_char(); // "
+        let mut res = String::new();
+        while let Some(c) = self.cur {
+            if c == '"' {
+                break;
+            }
+            res.push(c);
+            self.read_char();
+        }
+        self.read_char(); // "
+        res
+    }
     fn read_number(&mut self) -> String {
         let mut res = String::new();
         while self.cur.map_or(false, |c| c.is_ascii_digit()) {
@@ -117,6 +131,7 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 RBRACE
             }
+            '"' => STRING(self.read_string()),
             c if c.is_ascii_digit() => INT(self.read_number()),
             c if c.is_ascii_alphabetic() => {
                 let literal = self.read_identifier();
@@ -144,7 +159,8 @@ mod tests {
 true; false;
 1 == 1; 2 != 3; 1 < 2; 2 > 1;
 if (1 < 2) { true } else { false };
-let two = 2;"#;
+let two = 2;
+"strstr";"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -196,6 +212,8 @@ let two = 2;"#;
             IDENT("two".to_string()),
             ASSIGN,
             INT("2".to_string()),
+            SEMICOLON,
+            STRING("strstr".to_string()),
             SEMICOLON,
         ];
         let lexer = Lexer::new(input);
