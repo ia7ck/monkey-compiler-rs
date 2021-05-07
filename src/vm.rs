@@ -15,7 +15,7 @@ pub struct VM {
     constants: Vec<Object>,
     stack: Vec<Object>,
     last_popped: Option<Object>,
-    pub(crate) globals: Vec<Object>,
+    globals: Vec<Object>,
 }
 
 impl VM {
@@ -59,7 +59,7 @@ impl VM {
         let mut ip = 0;
         while ip < self.instructions.len() {
             let def = &DEFINITIONS[self.instructions[ip] as usize];
-            let op = def.opcode;
+            let op = def.opcode();
             match op {
                 OpConstant => {
                     let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
@@ -249,6 +249,9 @@ impl VM {
             Object::Null => false,
             _ => true,
         }
+    }
+    pub fn globals(self) -> Vec<Object> {
+        self.globals
     }
 }
 

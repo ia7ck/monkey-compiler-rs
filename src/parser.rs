@@ -75,7 +75,7 @@ impl<'a> Parser<'a> {
             statements.push(stmt);
             self.next_token();
         }
-        Ok(Program { statements })
+        Ok(Program::new(statements))
     }
     fn parse_statement(&mut self) -> Result<Statement> {
         match self.cur {
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn test_let_statements() {
         let program = parse("let x = 5; let y = z;");
-        let statements = program.statements;
+        let statements = program.statements();
         assert_eq!(statements.len(), 2);
 
         let stmt = &statements[0];
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn test_integer_literal_expression() {
         let program = parse("123;");
-        let statements = program.statements;
+        let statements = program.statements();
         assert_eq!(statements.len(), 1);
         let stmt = &statements[0];
         assert_eq!(
@@ -292,7 +292,7 @@ mod tests {
         use Expression::*;
         use Statement::*;
         let program = parse("if (1 < 2) { 3; 4 } else { 5; };");
-        let statements = program.statements;
+        let statements = program.statements();
         assert_eq!(statements.len(), 1);
         let stmt = &statements[0];
         assert_eq!(
@@ -315,15 +315,6 @@ mod tests {
         )
     }
 
-    impl Display for Program {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            for stmt in &self.statements {
-                writeln!(f, "{}", stmt)?
-            }
-            Ok(())
-        }
-    }
-
     impl Display for Statement {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
@@ -332,7 +323,7 @@ mod tests {
                     unimplemented!()
                 }
                 ExpressionStatement(exp) => {
-                    writeln!(f, "{}", exp)
+                    write!(f, "{}", exp)
                 }
                 BlockStatement(..) => {
                     unimplemented!()
@@ -430,8 +421,11 @@ mod tests {
         ];
         for (input, expected) in tests {
             let program = parse(input);
-            let actual = format!("{}", program);
-            assert_eq!(expected, actual.trim_end());
+            let statements = program.statements();
+            assert_eq!(statements.len(), 1);
+            let stmt = &statements[0];
+            let stmt = format!("{}", stmt);
+            assert_eq!(expected, stmt);
         }
     }
 }

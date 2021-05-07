@@ -114,7 +114,7 @@ pub enum Opcode {
 }
 
 pub struct Definition {
-    pub(crate) opcode: Opcode,
+    opcode: Opcode,
     operand_widths: Vec<usize>,
 }
 
@@ -124,6 +124,9 @@ impl Definition {
             opcode,
             operand_widths,
         }
+    }
+    pub fn opcode(&self) -> Opcode {
+        self.opcode
     }
 }
 

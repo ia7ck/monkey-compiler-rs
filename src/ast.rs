@@ -1,6 +1,15 @@
 #[derive(Debug)]
 pub struct Program {
-    pub(crate) statements: Vec<Statement>,
+    statements: Vec<Statement>,
+}
+
+impl Program {
+    pub fn new(statements: Vec<Statement>) -> Self {
+        Self { statements }
+    }
+    pub fn statements(self) -> Vec<Statement> {
+        self.statements
+    }
 }
 
 #[derive(Debug, PartialEq)]

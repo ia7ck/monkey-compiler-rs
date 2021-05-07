@@ -37,8 +37,8 @@ pub fn start() {
             .and_then(|program| {
                 let mut compiler = Compiler::new_with_state(&symbol_table, &constants);
                 let result = compiler.compile(program);
-                constants = compiler.constants.clone();
-                symbol_table = compiler.symbol_table.clone();
+                constants = compiler.constants().clone();
+                symbol_table = compiler.symbol_table().clone();
                 result
                     .map_err(|err| format!("compilation failed:\n {:?}", err))
                     .map(|()| compiler.bytecode())
@@ -54,7 +54,7 @@ pub fn start() {
                             .ok_or_else(|| "there is no last popped stack element".to_string())
                             .map(|elem| elem.clone())
                     });
-                globals = machine.globals;
+                globals = machine.globals();
                 result
             });
         match result {

@@ -6,10 +6,10 @@ use anyhow::{bail, Result};
 
 pub struct Compiler {
     instructions: Instructions,
-    pub(crate) constants: Vec<Object>,
+    constants: Vec<Object>,
     last_instruction: Option<EmittedInstruction>,
     previous_instruction: Option<EmittedInstruction>,
-    pub(crate) symbol_table: SymbolTable,
+    symbol_table: SymbolTable,
 }
 
 struct EmittedInstruction {
@@ -34,7 +34,7 @@ impl Compiler {
         compiler
     }
     pub fn compile(&mut self, program: Program) -> Result<()> {
-        for stmt in program.statements {
+        for stmt in program.statements() {
             self.compile_statement(stmt)?;
         }
         Ok(())
@@ -45,7 +45,7 @@ impl Compiler {
             LetStatement { name, value } => {
                 self.compile_expression(value)?;
                 let symbol = self.symbol_table.define(&name);
-                self.emit(Opcode::OpSetGlobal, &[symbol.index]);
+                self.emit(Opcode::OpSetGlobal, &[symbol.index()]);
             }
             ExpressionStatement(exp) => {
                 self.compile_expression(exp)?;
@@ -161,7 +161,7 @@ impl Compiler {
             }
             Identifier(name) => {
                 if let Some(symbol) = self.symbol_table.resolve(&name) {
-                    let index = symbol.index;
+                    let index = symbol.index();
                     self.emit(Opcode::OpGetGlobal, &[index]);
                 } else {
                     bail!("undefined variable {}", name);
@@ -219,8 +219,14 @@ impl Compiler {
     }
     fn change_operand(&mut self, op_pos: usize, operand: usize) {
         let def = &DEFINITIONS[self.instructions[op_pos] as usize];
-        let new_instruction = make(def.opcode, &[operand]);
+        let new_instruction = make(def.opcode(), &[operand]);
         self.replace_instruction(op_pos, new_instruction);
+    }
+    pub fn constants(&self) -> &Vec<Object> {
+        &self.constants
+    }
+    pub fn symbol_table(&self) -> &SymbolTable {
+        &self.symbol_table
     }
     pub fn bytecode(self) -> Bytecode {
         Bytecode {

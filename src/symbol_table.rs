@@ -9,7 +9,13 @@ pub enum SymbolScope {
 pub struct Symbol {
     name: String,
     scope: SymbolScope,
-    pub(crate) index: usize,
+    index: usize,
+}
+
+impl Symbol {
+    pub fn index(&self) -> usize {
+        self.index
+    }
 }
 
 #[derive(Clone)]
