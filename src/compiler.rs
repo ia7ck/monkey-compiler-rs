@@ -250,7 +250,6 @@ pub struct Bytecode {
 mod tests {
     use crate::code::Opcode;
     use crate::code::{make, Instructions};
-    use crate::compiler::tests::Constant::Integer;
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
     use crate::object::Object;
@@ -429,6 +428,7 @@ mod tests {
 
     #[test]
     fn test_global_let_statements() {
+        use Constant::*;
         use Opcode::*;
         let tests = vec![
             CompilerTestCase {
