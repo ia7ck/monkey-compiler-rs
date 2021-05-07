@@ -23,7 +23,10 @@ impl<'a> Lexer<'a> {
         self.peek = self.input.next();
     }
     fn skip_whitespace(&mut self) {
-        while self.cur.map_or(false, |c| c.is_ascii_whitespace()) {
+        while let Some(c) = self.cur {
+            if !c.is_ascii_whitespace() {
+                break;
+            }
             self.read_char();
         }
     }
@@ -43,16 +46,22 @@ impl<'a> Lexer<'a> {
     }
     fn read_number(&mut self) -> String {
         let mut res = String::new();
-        while self.cur.map_or(false, |c| c.is_ascii_digit()) {
-            res.push(self.cur.unwrap());
+        while let Some(c) = self.cur {
+            if !c.is_ascii_digit() {
+                break;
+            }
+            res.push(c);
             self.read_char();
         }
         res
     }
     fn read_identifier(&mut self) -> String {
         let mut res = String::new();
-        while self.cur.map_or(false, |c| c.is_ascii_alphabetic()) {
-            res.push(self.cur.unwrap());
+        while let Some(c) = self.cur {
+            if !c.is_ascii_alphabetic() {
+                break;
+            }
+            res.push(c);
             self.read_char();
         }
         res
