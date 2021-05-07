@@ -167,6 +167,11 @@ impl Compiler {
                     bail!("undefined variable {}", name);
                 }
             }
+            StringLiteral(value) => {
+                let string = MonkeyString(value);
+                let operands = &[self.add_constant(string)];
+                self.emit(OpConstant, operands);
+            }
         }
         Ok(())
     }
@@ -250,10 +255,10 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::object::Object;
     use crate::parser::Parser;
-    use anyhow::{bail, Result};
 
     enum Constant {
         Integer(i64),
+        MonkeyString(&'static str),
     }
     struct CompilerTestCase {
         input: &'static str,
@@ -462,6 +467,30 @@ mod tests {
         run_compiler_tests(tests);
     }
 
+    #[test]
+    fn test_string_expressions() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: r#"  "monkey"  "#,
+                expected_constants: vec![MonkeyString("monkey")],
+                expected_instructions: vec![make(OpConstant, &[0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: r#"  "mon" + "key"  "#,
+                expected_constants: vec![MonkeyString("mon"), MonkeyString("key")],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpAdd, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
     fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for tt in tests {
             let lexer = Lexer::new(tt.input);
@@ -502,34 +531,38 @@ mod tests {
     }
 
     fn test_constants(expected: Vec<Constant>, actual: Vec<Object>) {
-        use Constant::*;
         assert_eq!(expected.len(), actual.len(), "wrong number of constants.",);
-        for (i, (ex, ac)) in expected.iter().zip(actual.iter()).enumerate() {
-            match ex {
-                Integer(val) => {
-                    test_integer_object(val, ac).unwrap_or_else(|err| {
-                        panic!("constant {} - test_integer_object failed: {:?}", i, err)
-                    });
+        for (i, (expected, actual)) in expected.iter().zip(actual.iter()).enumerate() {
+            match (expected, actual) {
+                (Constant::Integer(v1), Object::Integer(v2)) => {
+                    assert_eq!(
+                        v1, v2,
+                        "constant {} - Integer object has wrong value. want={}, got={}",
+                        i, v1, v2
+                    );
+                }
+                (Constant::Integer(..), obj) => {
+                    panic!(
+                        "constant {} - object is not Integer. got={}",
+                        i,
+                        obj.r#type()
+                    );
+                }
+                (Constant::MonkeyString(v1), Object::MonkeyString(v2)) => {
+                    assert_eq!(
+                        v1, v2,
+                        "constant {} - String object has wrong value. want={}, got={}",
+                        i, v1, v2
+                    );
+                }
+                (Constant::MonkeyString(..), obj) => {
+                    panic!(
+                        "constant {} - object is not String. got={}",
+                        i,
+                        obj.r#type()
+                    );
                 }
             }
         }
-    }
-
-    fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
-        match actual {
-            Object::Integer(value) => {
-                if expected != value {
-                    bail!("object has wrong value. want={}, got={}", expected, value);
-                }
-            }
-            _ => {
-                bail!(
-                    "object is not Integer. got={} ({:?})",
-                    actual.r#type(),
-                    actual
-                );
-            }
-        }
-        Ok(())
     }
 }

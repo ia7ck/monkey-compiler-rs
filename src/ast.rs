@@ -23,6 +23,7 @@ pub enum Statement {
 pub enum Expression {
     Identifier(String),
     IntegerLiteral(i64),
+    StringLiteral(String),
     Boolean(bool),
     PrefixExpression {
         operator: PrefixOperator,

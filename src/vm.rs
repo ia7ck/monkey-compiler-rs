@@ -387,6 +387,9 @@ mod tests {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
             }
+            MonkeyString(..) => {
+                todo!()
+            }
             Boolean(value) => {
                 test_boolean_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));

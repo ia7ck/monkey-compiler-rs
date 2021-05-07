@@ -128,6 +128,7 @@ impl<'a> Parser<'a> {
                 let value = literal.parse::<i64>()?;
                 IntegerLiteral(value)
             }
+            STRING(literal) => StringLiteral(literal.to_string()),
             MINUS | BANG => self.parse_prefix_expression()?,
             LPAREN => self.parse_grouped_expression()?,
             TRUE => Boolean(true),
@@ -341,6 +342,9 @@ mod tests {
                 }
                 IntegerLiteral(value) => {
                     write!(f, "{}", value)
+                }
+                StringLiteral(..) => {
+                    unimplemented!()
                 }
                 Boolean(value) => {
                     write!(f, "{}", value)
