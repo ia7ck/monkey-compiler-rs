@@ -137,6 +137,9 @@ impl VM {
             (Integer(left), Integer(right)) => {
                 self.execute_binary_integer_operation(op, left, right)?;
             }
+            (MonkeyString(left), MonkeyString(right)) => {
+                self.execute_binary_string_operation(op, left, right)?;
+            }
             (left, right) => {
                 bail!(
                     "unsupported types for binary operation {} {}",
@@ -234,6 +237,23 @@ impl VM {
                 self.push(FALSE)?;
             }
         }
+        Ok(())
+    }
+    fn execute_binary_string_operation(
+        &mut self,
+        op: Opcode,
+        left: String,
+        right: String,
+    ) -> Result<()> {
+        let result = match op {
+            Opcode::OpAdd => {
+                format!("{}{}", left, right)
+            }
+            _ => {
+                bail!("unknown string operator: {:?}", op);
+            }
+        };
+        self.push(Object::MonkeyString(result))?;
         Ok(())
     }
     fn native_bool_to_boolean_object(value: bool) -> Object {
@@ -361,6 +381,20 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_string_expressions() {
+        let tests = vec![
+            ("  \"monkey\";  ", "monkey"),
+            ("  \"mon\" + \"key\";  ", "monkey"),
+            ("  \"mon\" + \"key\" + \"banana\";  ", "monkeybanana"),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::MonkeyString(value.to_string())))
+            .collect();
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
@@ -387,8 +421,9 @@ mod tests {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
             }
-            MonkeyString(..) => {
-                todo!()
+            MonkeyString(value) => {
+                test_string_object(value, actual)
+                    .unwrap_or_else(|err| panic!("test_string_object failed: {:?}", err));
             }
             Boolean(value) => {
                 test_boolean_object(value, actual)
@@ -411,6 +446,24 @@ mod tests {
             _ => {
                 bail!(
                     "object is not Integer. got={} ({:?})",
+                    actual.r#type(),
+                    actual
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn test_string_object(expected: &str, actual: &Object) -> Result<()> {
+        match actual {
+            Object::MonkeyString(value) => {
+                if expected != value {
+                    bail!("object has wrong value. want={}, got={}", expected, value);
+                }
+            }
+            _ => {
+                bail!(
+                    "object is not String. got={} ({:?})",
                     actual.r#type(),
                     actual
                 );
