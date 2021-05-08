@@ -3,6 +3,7 @@ pub enum Object {
     Integer(i64),
     MonkeyString(String),
     Boolean(bool),
+    ArrayObject(Vec<Object>),
     Null,
     Dummy,
 }
@@ -14,6 +15,7 @@ impl Object {
             Integer(..) => "INTEGER",
             MonkeyString(..) => "STRING",
             Boolean(..) => "BOOLEAN",
+            ArrayObject(..) => "ARRAY",
             Null => "NULL",
             Dummy => unreachable!(),
         }

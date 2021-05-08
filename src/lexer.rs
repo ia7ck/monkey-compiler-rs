@@ -120,6 +120,10 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 GT
             }
+            ',' => {
+                self.read_char();
+                COMMA
+            }
             ';' => {
                 self.read_char();
                 SEMICOLON
@@ -139,6 +143,14 @@ impl<'a> Iterator for Lexer<'a> {
             '}' => {
                 self.read_char();
                 RBRACE
+            }
+            '[' => {
+                self.read_char();
+                LBRACKET
+            }
+            ']' => {
+                self.read_char();
+                RBRACKET
             }
             '"' => STRING(self.read_string()),
             c if c.is_ascii_digit() => INT(self.read_number()),
@@ -169,7 +181,8 @@ true; false;
 1 == 1; 2 != 3; 1 < 2; 2 > 1;
 if (1 < 2) { true } else { false };
 let two = 2;
-"strstr";"#;
+"strstr";
+[1, 2];"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -223,6 +236,12 @@ let two = 2;
             INT("2".to_string()),
             SEMICOLON,
             STRING("strstr".to_string()),
+            SEMICOLON,
+            LBRACKET,
+            INT("1".to_string()),
+            COMMA,
+            INT("2".to_string()),
+            RBRACKET,
             SEMICOLON,
         ];
         let lexer = Lexer::new(input);

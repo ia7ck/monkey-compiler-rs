@@ -125,6 +125,17 @@ impl VM {
                     let obj = self.pop()?;
                     self.globals[global_index] = obj;
                 }
+                OpArray => {
+                    let num_elements = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let mut elements = Vec::new();
+                    for _ in 0..num_elements {
+                        let e = self.pop()?;
+                        elements.push(e);
+                    }
+                    elements.reverse();
+                    self.push(Object::ArrayObject(elements))?;
+                }
             }
         }
         Ok(())
@@ -395,6 +406,23 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_array_literals() {
+        let tests = vec![
+            ("[]", vec![]),
+            ("[1]", vec![1]),
+            ("[11, 22 + 33]", vec![11, 55]),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, elements)| {
+                let elements = elements.into_iter().map(|v| Object::Integer(v)).collect();
+                (input, Object::ArrayObject(elements))
+            })
+            .collect();
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
@@ -428,6 +456,10 @@ mod tests {
             Boolean(value) => {
                 test_boolean_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
+            }
+            ArrayObject(elements) => {
+                test_array_object(elements, actual)
+                    .unwrap_or_else(|err| panic!("test_array_object failed: {:?}", err));
             }
             Null => {
                 assert_eq!(&NULL, actual);
@@ -488,6 +520,30 @@ mod tests {
                     actual.r#type(),
                     actual
                 )
+            }
+        }
+        Ok(())
+    }
+
+    fn test_array_object(expected: &Vec<Object>, actual: &Object) -> Result<()> {
+        match actual {
+            Object::ArrayObject(elements) => {
+                ensure!(
+                    expected.len() == elements.len(),
+                    "wrong number of elements. want={}, got={}",
+                    expected.len(),
+                    elements.len()
+                );
+                for (expected, actual) in expected.iter().zip(elements.iter()) {
+                    test_expected_object(expected, actual);
+                }
+            }
+            _ => {
+                bail!(
+                    "object is not Array. got={} ({:?})",
+                    actual.r#type(),
+                    actual
+                );
             }
         }
         Ok(())

@@ -172,6 +172,13 @@ impl Compiler {
                 let operands = &[self.add_constant(string)];
                 self.emit(OpConstant, operands);
             }
+            ArrayLiteral(elements) => {
+                let len = elements.len();
+                for e in elements {
+                    self.compile_expression(e)?;
+                }
+                self.emit(OpArray, &[len]);
+            }
         }
         Ok(())
     }
@@ -484,6 +491,32 @@ mod tests {
                     make(OpConstant, &[0]),
                     make(OpConstant, &[1]),
                     make(OpAdd, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_array_literals() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "[]",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpArray, &[0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "[11, 22 + 33]",
+                expected_constants: vec![Integer(11), Integer(22), Integer(33)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]), // 11
+                    make(OpConstant, &[1]), // 22
+                    make(OpConstant, &[2]), // 33
+                    make(OpAdd, &[]),       // +
+                    make(OpArray, &[2]),
                     make(OpPop, &[]),
                 ],
             },

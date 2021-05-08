@@ -12,6 +12,7 @@ enum Precedence {
     PRODUCT,
     PREFIX,
     CALL,
+    INDEX,
 }
 
 impl Token {
@@ -24,6 +25,7 @@ impl Token {
             LT | GT => LESS,
             EQ | NEQ => EQUALS,
             LPAREN => CALL,
+            LBRACKET => INDEX,
             _ => LOWEST,
         }
     }
@@ -134,6 +136,7 @@ impl<'a> Parser<'a> {
             TRUE => Boolean(true),
             FALSE => Boolean(false),
             IF => self.parse_if_expression()?,
+            LBRACKET => self.parse_array_literal()?,
             _ => {
                 bail!("cannot parse: {:?}", self.cur);
             }
@@ -236,6 +239,27 @@ impl<'a> Parser<'a> {
         }
         Ok(Statement::BlockStatement(statements))
     }
+    fn parse_array_literal(&mut self) -> Result<Expression> {
+        assert_eq!(self.cur, Token::LBRACKET); // [
+        self.next_token();
+        let elements = self.parse_expression_list(Token::RBRACKET)?; // ]
+        Ok(Expression::ArrayLiteral(elements))
+    }
+    fn parse_expression_list(&mut self, end: Token) -> Result<Vec<Expression>> {
+        if self.cur_token_is(&end) {
+            return Ok(vec![]);
+        }
+        let mut result = Vec::new();
+        result.push(self.parse_expression(Precedence::LOWEST)?);
+        while self.peek_token_is(&Token::COMMA) {
+            self.next_token();
+            self.next_token(); // ,
+            result.push(self.parse_expression(Precedence::LOWEST)?);
+        }
+        self.expect_peek(&end)?;
+        self.next_token();
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -316,6 +340,25 @@ mod tests {
         )
     }
 
+    #[test]
+    fn test_array_literal_expression() {
+        let program = parse("[1, 2 + 3];");
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::ArrayLiteral(vec![
+                Expression::IntegerLiteral(1),
+                Expression::InfixExpression {
+                    left: Box::new(Expression::IntegerLiteral(2)),
+                    operator: InfixOperator::PLUS,
+                    right: Box::new(Expression::IntegerLiteral(3)),
+                }
+            ]))
+        )
+    }
+
     impl Display for Statement {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
@@ -360,6 +403,9 @@ mod tests {
                     write!(f, "({} {} {})", left, operator, right)
                 }
                 IfExpression { .. } => {
+                    unimplemented!()
+                }
+                ArrayLiteral(..) => {
                     unimplemented!()
                 }
             }
