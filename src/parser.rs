@@ -137,6 +137,7 @@ impl<'a> Parser<'a> {
             FALSE => Boolean(false),
             IF => self.parse_if_expression()?,
             LBRACKET => self.parse_array_literal()?,
+            LBRACE => self.parse_hash_literal()?,
             _ => {
                 bail!("cannot parse: {:?}", self.cur);
             }
@@ -260,6 +261,29 @@ impl<'a> Parser<'a> {
         self.next_token();
         Ok(result)
     }
+    fn parse_hash_literal(&mut self) -> Result<Expression> {
+        assert_eq!(self.cur, Token::LBRACE); // {
+        let mut pairs = Vec::new();
+        while !self.peek_token_is(&Token::RBRACE) {
+            self.next_token();
+            let key = self.parse_expression(Precedence::LOWEST)?;
+
+            self.expect_peek(&Token::COLON)?; // :
+            self.next_token();
+
+            self.next_token();
+            let value = self.parse_expression(Precedence::LOWEST)?;
+            pairs.push((key, value));
+
+            if !self.peek_token_is(&Token::RBRACE) {
+                self.expect_peek(&Token::COMMA)?;
+                self.next_token();
+            }
+        }
+        self.expect_peek(&Token::RBRACE)?; // }
+        self.next_token();
+        Ok(Expression::HashLiteral(pairs))
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +383,27 @@ mod tests {
         )
     }
 
+    #[test]
+    fn test_hash_literal_expression() {
+        let program = parse(r#"  {"key": 123, 456: "val"};  "#);
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::HashLiteral(vec![
+                (
+                    Expression::StringLiteral("key".to_string()),
+                    Expression::IntegerLiteral(123)
+                ),
+                (
+                    Expression::IntegerLiteral(456),
+                    Expression::StringLiteral("val".to_string())
+                ),
+            ]))
+        )
+    }
+
     impl Display for Statement {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
@@ -406,6 +451,9 @@ mod tests {
                     unimplemented!()
                 }
                 ArrayLiteral(..) => {
+                    unimplemented!()
+                }
+                HashLiteral(..) => {
                     unimplemented!()
                 }
             }

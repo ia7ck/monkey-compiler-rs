@@ -2,6 +2,7 @@ use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::object::Object;
 use anyhow::{bail, Result};
+use std::collections::HashMap;
 
 const STACK_SIZE: usize = 2048;
 pub(crate) const GLOBAL_SIZE: usize = 65536;
@@ -135,6 +136,18 @@ impl VM {
                     }
                     elements.reverse();
                     self.push(Object::ArrayObject(elements))?;
+                }
+                OpHash => {
+                    let num_pairs = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let mut pairs = HashMap::new();
+                    for _ in 0..num_pairs {
+                        let value = self.pop()?;
+                        let key = self.pop()?;
+                        let h = key.calculate_hash()?;
+                        pairs.insert(h, value);
+                    }
+                    self.push(Object::HashObject(pairs))?;
                 }
             }
         }
@@ -294,6 +307,7 @@ mod tests {
     use crate::parser::Parser;
     use crate::vm::{NULL, VM};
     use anyhow::{bail, ensure, Result};
+    use std::collections::HashMap;
 
     #[test]
     fn test_integer_arithmetic() {
@@ -423,6 +437,29 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_hash_literals() {
+        let tests = vec![
+            ("{}", vec![]),
+            ("{12: 3, 4 + 56: 78 * 9}", vec![(12, 3), (4 + 56, 78 * 9)]),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, pairs)| {
+                let pairs = pairs
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let k = Object::Integer(k);
+                        let v = Object::Integer(v);
+                        (k.calculate_hash().unwrap(), v)
+                    })
+                    .collect();
+                (input, Object::HashObject(pairs))
+            })
+            .collect();
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
@@ -460,6 +497,10 @@ mod tests {
             ArrayObject(elements) => {
                 test_array_object(elements, actual)
                     .unwrap_or_else(|err| panic!("test_array_object failed: {:?}", err));
+            }
+            HashObject(pairs) => {
+                test_hash_object(pairs, actual)
+                    .unwrap_or_else(|err| panic!("test_hash_object failed: {:?}", err));
             }
             Null => {
                 assert_eq!(&NULL, actual);
@@ -544,6 +585,33 @@ mod tests {
                     actual.r#type(),
                     actual
                 );
+            }
+        }
+        Ok(())
+    }
+
+    fn test_hash_object(expected: &HashMap<u64, Object>, actual: &Object) -> Result<()> {
+        match actual {
+            Object::HashObject(pairs) => {
+                ensure!(
+                    expected.len() == pairs.len(),
+                    "wrong number of pairs. want={}, got={}",
+                    expected.len(),
+                    pairs.len()
+                );
+                for (expected_key, expected_value) in expected {
+                    match pairs.get(expected_key) {
+                        None => {
+                            bail!("no pair for given key in pairs");
+                        }
+                        Some(actual_value) => {
+                            test_expected_object(expected_value, actual_value);
+                        }
+                    }
+                }
+            }
+            _ => {
+                bail!("object is not Hash. got={} ({:?})", actual.r#type(), actual)
             }
         }
         Ok(())

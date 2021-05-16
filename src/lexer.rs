@@ -128,6 +128,10 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 SEMICOLON
             }
+            ':' => {
+                self.read_char();
+                COLON
+            }
             '(' => {
                 self.read_char();
                 LPAREN
@@ -182,7 +186,8 @@ true; false;
 if (1 < 2) { true } else { false };
 let two = 2;
 "strstr";
-[1, 2];"#;
+[1, 2];
+{"key": 123};"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -242,6 +247,12 @@ let two = 2;
             COMMA,
             INT("2".to_string()),
             RBRACKET,
+            SEMICOLON,
+            LBRACE,
+            STRING("key".to_string()),
+            COLON,
+            INT("123".to_string()),
+            RBRACE,
             SEMICOLON,
         ];
         let lexer = Lexer::new(input);

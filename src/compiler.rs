@@ -179,6 +179,14 @@ impl Compiler {
                 }
                 self.emit(OpArray, &[len]);
             }
+            HashLiteral(pairs) => {
+                let len = pairs.len();
+                for (key, value) in pairs {
+                    self.compile_expression(key)?;
+                    self.compile_expression(value)?;
+                }
+                self.emit(OpHash, &[len]);
+            }
         }
         Ok(())
     }
@@ -517,6 +525,43 @@ mod tests {
                     make(OpConstant, &[2]), // 33
                     make(OpAdd, &[]),       // +
                     make(OpArray, &[2]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_hash_literals() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "{}",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpHash, &[0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "{12: 3, 4 + 56: 78 * 9}",
+                expected_constants: vec![
+                    Integer(12),
+                    Integer(3),
+                    Integer(4),
+                    Integer(56),
+                    Integer(78),
+                    Integer(9),
+                ],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]), // 12
+                    make(OpConstant, &[1]), // 3
+                    make(OpConstant, &[2]), // 4
+                    make(OpConstant, &[3]), // 56
+                    make(OpAdd, &[]),       // +
+                    make(OpConstant, &[4]), // 78
+                    make(OpConstant, &[5]), // 9
+                    make(OpMul, &[]),       // *
+                    make(OpHash, &[4]),
                     make(OpPop, &[]),
                 ],
             },

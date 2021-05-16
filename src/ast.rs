@@ -40,6 +40,7 @@ pub enum Expression {
         alternative: Option<Box<Statement>>,
     },
     ArrayLiteral(Vec<Expression>),
+    HashLiteral(Vec<(Expression, Expression)>),
 }
 
 #[derive(Debug, PartialEq)]
