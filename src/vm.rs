@@ -149,6 +149,12 @@ impl VM {
                     }
                     self.push(Object::HashObject(hash))?;
                 }
+                OpIndex => {
+                    let index = self.pop()?;
+                    let left = self.pop()?;
+                    self.execute_index_expression(left, index)?;
+                    ip += 1;
+                }
             }
         }
         Ok(())
@@ -279,6 +285,33 @@ impl VM {
         };
         self.push(Object::MonkeyString(result))?;
         Ok(())
+    }
+    fn execute_index_expression(&mut self, left: Object, index: Object) -> Result<()> {
+        use Object::{ArrayObject, HashObject, Integer};
+        match (left, index) {
+            (ArrayObject(elements), Integer(index)) => self.execute_array_index(elements, index),
+            (HashObject(hash), index) => self.execute_hash_index(hash, index),
+            (left, _) => {
+                bail!("index operator not supported: {}", left.r#type());
+            }
+        }
+    }
+    fn execute_array_index(&mut self, elements: Vec<Object>, index: i64) -> Result<()> {
+        if index < 0 {
+            self.push(NULL)?;
+            return Ok(());
+        }
+        match elements.get(index as usize) {
+            None => self.push(NULL),
+            Some(e) => self.push(e.clone()),
+        }
+    }
+    fn execute_hash_index(&mut self, hash: HashMap<u64, Object>, index: Object) -> Result<()> {
+        let key = index.calculate_hash()?;
+        match hash.get(&key) {
+            None => self.push(NULL),
+            Some(value) => self.push(value.clone()),
+        }
     }
     fn native_bool_to_boolean_object(value: bool) -> Object {
         if value {
@@ -457,6 +490,33 @@ mod tests {
                 (input, Object::HashObject(hash))
             })
             .collect();
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_index_expressions() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        macro_rules! null {
+            () => {
+                Object::Null
+            };
+        }
+        let tests = vec![
+            ("[1, 2, 3][1]", int!(2)),
+            ("[1, 2, 3][0 + 2]", int!(3)),
+            ("[[1, 1, 1]][0][0]", int!(1)),
+            ("[][0]", null!()),
+            ("[1, 2, 3][99]", null!()),
+            ("[1][-1]", null!()),
+            ("{1: 1, 2: 2}[1]", int!(1)),
+            ("{1: 1, 2: 2}[2]", int!(2)),
+            ("{1: 1}[0]", null!()),
+            ("{}[0]", null!()),
+        ];
         run_vm_tests(tests);
     }
 

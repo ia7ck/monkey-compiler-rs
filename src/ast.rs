@@ -41,6 +41,10 @@ pub enum Expression {
     },
     ArrayLiteral(Vec<Expression>),
     HashLiteral(Vec<(Expression, Expression)>),
+    IndexExpression {
+        left: Box<Expression>,
+        index: Box<Expression>,
+    },
 }
 
 #[derive(Debug, PartialEq)]

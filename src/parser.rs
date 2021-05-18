@@ -148,6 +148,10 @@ impl<'a> Parser<'a> {
                     self.next_token();
                     self.parse_infix_expression(exp)?
                 }
+                LBRACKET => {
+                    self.next_token();
+                    self.parse_index_expression(exp)?
+                }
                 _ => return Ok(exp),
             };
         }
@@ -284,6 +288,20 @@ impl<'a> Parser<'a> {
         self.next_token();
         Ok(Expression::HashLiteral(pairs))
     }
+    fn parse_index_expression(&mut self, left: Expression) -> Result<Expression> {
+        assert_eq!(self.cur, Token::LBRACKET); // [
+        self.next_token();
+
+        let index = self.parse_expression(Precedence::LOWEST)?;
+
+        self.expect_peek(&Token::RBRACKET)?; // ]
+        self.next_token();
+
+        Ok(Expression::IndexExpression {
+            left: Box::new(left),
+            index: Box::new(index),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -404,6 +422,25 @@ mod tests {
         )
     }
 
+    #[test]
+    fn test_index_expression() {
+        let program = parse("arr[1 + 2]");
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::IndexExpression {
+                left: Box::new(Expression::Identifier("arr".to_string())),
+                index: Box::new(Expression::InfixExpression {
+                    left: Box::new(Expression::IntegerLiteral(1)),
+                    operator: InfixOperator::PLUS,
+                    right: Box::new(Expression::IntegerLiteral(2))
+                })
+            })
+        )
+    }
+
     impl Display for Statement {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
@@ -454,6 +491,9 @@ mod tests {
                     unimplemented!()
                 }
                 HashLiteral(..) => {
+                    unimplemented!()
+                }
+                IndexExpression { .. } => {
                     unimplemented!()
                 }
             }

@@ -113,6 +113,7 @@ pub enum Opcode {
     OpSetGlobal,
     OpArray,
     OpHash,
+    OpIndex,
 }
 
 pub struct Definition {
@@ -155,6 +156,7 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpSetGlobal, vec![2]),
         Definition::new(OpArray, vec![2]),
         Definition::new(OpHash, vec![2]),
+        Definition::new(OpIndex, vec![]),
     ]
 });
 

@@ -187,6 +187,11 @@ impl Compiler {
                 }
                 self.emit(OpHash, &[len]);
             }
+            IndexExpression { left, index } => {
+                self.compile_expression(*left)?;
+                self.compile_expression(*index)?;
+                self.emit(OpIndex, &[]);
+            }
         }
         Ok(())
     }
@@ -566,6 +571,34 @@ mod tests {
                 ],
             },
         ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_index_expressions() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![CompilerTestCase {
+            input: "[11, 22, 33][44 + 55]",
+            expected_constants: vec![
+                Integer(11),
+                Integer(22),
+                Integer(33),
+                Integer(44),
+                Integer(55),
+            ],
+            expected_instructions: vec![
+                make(OpConstant, &[0]), // 11
+                make(OpConstant, &[1]), // 22
+                make(OpConstant, &[2]), // 33
+                make(OpArray, &[3]),
+                make(OpConstant, &[3]), // 44
+                make(OpConstant, &[4]), // 55
+                make(OpAdd, &[]),
+                make(OpIndex, &[]),
+                make(OpPop, &[]),
+            ],
+        }];
         run_compiler_tests(tests);
     }
 
