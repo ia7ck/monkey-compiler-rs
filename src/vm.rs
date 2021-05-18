@@ -140,14 +140,14 @@ impl VM {
                 OpHash => {
                     let num_pairs = read_uint16(self.instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
-                    let mut pairs = HashMap::new();
+                    let mut hash = HashMap::new();
                     for _ in 0..num_pairs {
                         let value = self.pop()?;
                         let key = self.pop()?;
                         let h = key.calculate_hash()?;
-                        pairs.insert(h, value);
+                        hash.insert(h, value);
                     }
-                    self.push(Object::HashObject(pairs))?;
+                    self.push(Object::HashObject(hash))?;
                 }
             }
         }
@@ -446,7 +446,7 @@ mod tests {
         let tests = tests
             .into_iter()
             .map(|(input, pairs)| {
-                let pairs = pairs
+                let hash = pairs
                     .into_iter()
                     .map(|(k, v)| {
                         let k = Object::Integer(k);
@@ -454,7 +454,7 @@ mod tests {
                         (k.calculate_hash().unwrap(), v)
                     })
                     .collect();
-                (input, Object::HashObject(pairs))
+                (input, Object::HashObject(hash))
             })
             .collect();
         run_vm_tests(tests);
@@ -498,8 +498,8 @@ mod tests {
                 test_array_object(elements, actual)
                     .unwrap_or_else(|err| panic!("test_array_object failed: {:?}", err));
             }
-            HashObject(pairs) => {
-                test_hash_object(pairs, actual)
+            HashObject(hash) => {
+                test_hash_object(hash, actual)
                     .unwrap_or_else(|err| panic!("test_hash_object failed: {:?}", err));
             }
             Null => {
@@ -592,15 +592,15 @@ mod tests {
 
     fn test_hash_object(expected: &HashMap<u64, Object>, actual: &Object) -> Result<()> {
         match actual {
-            Object::HashObject(pairs) => {
+            Object::HashObject(hash) => {
                 ensure!(
-                    expected.len() == pairs.len(),
+                    expected.len() == hash.len(),
                     "wrong number of pairs. want={}, got={}",
                     expected.len(),
-                    pairs.len()
+                    hash.len()
                 );
                 for (expected_key, expected_value) in expected {
-                    match pairs.get(expected_key) {
+                    match hash.get(expected_key) {
                         None => {
                             bail!("no pair for given key in pairs");
                         }
