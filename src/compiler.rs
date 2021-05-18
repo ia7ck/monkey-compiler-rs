@@ -561,7 +561,7 @@ mod tests {
                     make(OpConstant, &[4]), // 78
                     make(OpConstant, &[5]), // 9
                     make(OpMul, &[]),       // *
-                    make(OpHash, &[4]),
+                    make(OpHash, &[2]),
                     make(OpPop, &[]),
                 ],
             },
