@@ -52,7 +52,7 @@ pub fn start() {
                         machine
                             .last_popped_stack_elem()
                             .ok_or_else(|| "there is no last popped stack element".to_string())
-                            .map(|elem| elem.clone())
+                            .map(|elem| elem)
                     });
                 globals = machine.globals();
                 result
