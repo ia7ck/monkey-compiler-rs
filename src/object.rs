@@ -3,14 +3,15 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::mem;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Object {
     Integer(i64),
     MonkeyString(String),
     Boolean(bool),
-    ArrayObject(Vec<Object>),
-    HashObject(HashMap<u64, Object>),
+    ArrayObject(Vec<Rc<Object>>),
+    HashObject(HashMap<u64, Rc<Object>>),
     Null,
     Dummy,
 }
