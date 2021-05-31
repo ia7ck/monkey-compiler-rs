@@ -109,9 +109,7 @@ impl<'a> Parser<'a> {
                 }
                 Ok(Statement::LetStatement { name, value })
             }
-            peek => {
-                bail!("expected next token to be LET, got {:?} instead", peek)
-            }
+            peek => bail!("expected next token to be LET, got {:?} instead", peek),
         }
     }
     fn parse_expression_statement(&mut self) -> Result<Statement> {
@@ -445,15 +443,9 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
             match self {
-                LetStatement { .. } => {
-                    unimplemented!()
-                }
-                ExpressionStatement(exp) => {
-                    write!(f, "{}", exp)
-                }
-                BlockStatement(..) => {
-                    unimplemented!()
-                }
+                LetStatement { .. } => unimplemented!(),
+                ExpressionStatement(exp) => write!(f, "{}", exp),
+                BlockStatement(..) => unimplemented!(),
             }
         }
     }
@@ -462,40 +454,20 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Expression::*;
             match self {
-                Identifier { .. } => {
-                    unimplemented!()
-                }
-                IntegerLiteral(value) => {
-                    write!(f, "{}", value)
-                }
-                StringLiteral(..) => {
-                    unimplemented!()
-                }
-                Boolean(value) => {
-                    write!(f, "{}", value)
-                }
-                PrefixExpression { operator, right } => {
-                    write!(f, "({}{})", operator, right)
-                }
+                Identifier { .. } => unimplemented!(),
+                IntegerLiteral(value) => write!(f, "{}", value),
+                StringLiteral(..) => unimplemented!(),
+                Boolean(value) => write!(f, "{}", value),
+                PrefixExpression { operator, right } => write!(f, "({}{})", operator, right),
                 InfixExpression {
                     left,
                     operator,
                     right,
-                } => {
-                    write!(f, "({} {} {})", left, operator, right)
-                }
-                IfExpression { .. } => {
-                    unimplemented!()
-                }
-                ArrayLiteral(..) => {
-                    unimplemented!()
-                }
-                HashLiteral(..) => {
-                    unimplemented!()
-                }
-                IndexExpression { .. } => {
-                    unimplemented!()
-                }
+                } => write!(f, "({} {} {})", left, operator, right),
+                IfExpression { .. } => unimplemented!(),
+                ArrayLiteral(..) => unimplemented!(),
+                HashLiteral(..) => unimplemented!(),
+                IndexExpression { .. } => unimplemented!(),
             }
         }
     }
@@ -504,12 +476,8 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use PrefixOperator::*;
             match self {
-                MINUS => {
-                    write!(f, "-")
-                }
-                BANG => {
-                    write!(f, "!")
-                }
+                MINUS => write!(f, "-"),
+                BANG => write!(f, "!"),
             }
         }
     }
@@ -518,30 +486,14 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use InfixOperator::*;
             match self {
-                PLUS => {
-                    write!(f, "+")
-                }
-                MINUS => {
-                    write!(f, "-")
-                }
-                ASTERISK => {
-                    write!(f, "*")
-                }
-                SLASH => {
-                    write!(f, "/")
-                }
-                LT => {
-                    write!(f, "<")
-                }
-                GT => {
-                    write!(f, ">")
-                }
-                EQ => {
-                    write!(f, "==")
-                }
-                NEQ => {
-                    write!(f, "!=")
-                }
+                PLUS => write!(f, "+"),
+                MINUS => write!(f, "-"),
+                ASTERISK => write!(f, "*"),
+                SLASH => write!(f, "/"),
+                LT => write!(f, "<"),
+                GT => write!(f, ">"),
+                EQ => write!(f, "=="),
+                NEQ => write!(f, "!="),
             }
         }
     }

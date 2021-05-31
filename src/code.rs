@@ -71,9 +71,7 @@ impl Display for Instructions {
             }
             match operand_count {
                 0 => format!("{:?}", def.opcode),
-                1 => {
-                    format!("{:?} {}", def.opcode, operands[0])
-                }
+                1 => format!("{:?} {}", def.opcode, operands[0]),
                 _ => format!("ERROR: unhandled operand_count for {:?}\n", def.opcode),
             }
         }
