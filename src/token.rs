@@ -5,6 +5,7 @@ pub enum Token {
 
     IDENT(String), // foobar, x, y, ...
     INT(String),
+    STRING(String),
 
     ASSIGN,   // =
     PLUS,     // +
@@ -19,12 +20,16 @@ pub enum Token {
     EQ,  // ==
     NEQ, // !=
 
+    COMMA,     // ,
     SEMICOLON, // ;
+    COLON,     // :
 
-    LPAREN, // (
-    RPAREN, // )
-    LBRACE, // {
-    RBRACE, // }
+    LPAREN,   // (
+    RPAREN,   // )
+    LBRACE,   // {
+    RBRACE,   // }
+    LBRACKET, // [
+    RBRACKET, // ]
 
     LET,
     TRUE,

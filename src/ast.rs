@@ -23,6 +23,7 @@ pub enum Statement {
 pub enum Expression {
     Identifier(String),
     IntegerLiteral(i64),
+    StringLiteral(String),
     Boolean(bool),
     PrefixExpression {
         operator: PrefixOperator,
@@ -37,6 +38,12 @@ pub enum Expression {
         condition: Box<Expression>,
         consequence: Box<Statement>,
         alternative: Option<Box<Statement>>,
+    },
+    ArrayLiteral(Vec<Expression>),
+    HashLiteral(Vec<(Expression, Expression)>),
+    IndexExpression {
+        left: Box<Expression>,
+        index: Box<Expression>,
     },
 }
 

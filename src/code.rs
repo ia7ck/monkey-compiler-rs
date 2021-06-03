@@ -71,9 +71,7 @@ impl Display for Instructions {
             }
             match operand_count {
                 0 => format!("{:?}", def.opcode),
-                1 => {
-                    format!("{:?} {}", def.opcode, operands[0])
-                }
+                1 => format!("{:?} {}", def.opcode, operands[0]),
                 _ => format!("ERROR: unhandled operand_count for {:?}\n", def.opcode),
             }
         }
@@ -111,6 +109,9 @@ pub enum Opcode {
     OpNull,
     OpGetGlobal,
     OpSetGlobal,
+    OpArray,
+    OpHash,
+    OpIndex,
 }
 
 pub struct Definition {
@@ -151,6 +152,9 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpNull, vec![]),
         Definition::new(OpGetGlobal, vec![2]),
         Definition::new(OpSetGlobal, vec![2]),
+        Definition::new(OpArray, vec![2]),
+        Definition::new(OpHash, vec![2]),
+        Definition::new(OpIndex, vec![]),
     ]
 });
 

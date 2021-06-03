@@ -2,6 +2,9 @@ use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::object::Object;
 use anyhow::{bail, Result};
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::rc::Rc;
 
 const STACK_SIZE: usize = 2048;
 pub(crate) const GLOBAL_SIZE: usize = 65536;
@@ -12,41 +15,45 @@ const NULL: Object = Object::Null;
 
 pub struct VM {
     instructions: Instructions,
-    constants: Vec<Object>,
-    stack: Vec<Object>,
-    last_popped: Option<Object>,
-    globals: Vec<Object>,
+    constants: Vec<Rc<Object>>,
+    stack: Vec<Rc<Object>>,
+    last_popped: Option<Rc<Object>>,
+    globals: Vec<Rc<Object>>,
 }
 
 impl VM {
     pub fn new(bytecode: Bytecode) -> Self {
+        let constants = bytecode.constants.into_iter().map(Rc::new).collect();
         Self {
             instructions: bytecode.instructions,
-            constants: bytecode.constants,
+            constants,
             stack: Vec::with_capacity(STACK_SIZE),
             last_popped: None,
-            globals: vec![Object::Dummy; GLOBAL_SIZE],
+            globals: vec![Rc::new(Object::Dummy); GLOBAL_SIZE],
         }
     }
     pub fn new_with_global_store(bytecode: Bytecode, globals: &[Object]) -> Self {
         let mut machine = VM::new(bytecode);
-        machine.globals = globals.to_vec();
+        machine.globals = globals.iter().map(|g| Rc::new(g.clone())).collect();
         machine
     }
-    pub fn last_popped_stack_elem(&self) -> Option<&Object> {
-        self.last_popped.as_ref()
+    pub fn last_popped_stack_elem(&self) -> Option<Rc<Object>> {
+        match &self.last_popped {
+            Some(last) => Some(Rc::clone(last)),
+            None => None,
+        }
     }
-    fn push(&mut self, obj: Object) -> Result<()> {
+    fn push(&mut self, obj: Rc<Object>) -> Result<()> {
         if self.stack.len() >= STACK_SIZE {
             bail!("stack overflow");
         }
         self.stack.push(obj);
         Ok(())
     }
-    fn pop(&mut self) -> Result<Object> {
+    fn pop(&mut self) -> Result<Rc<Object>> {
         match self.stack.pop() {
             Some(obj) => {
-                self.last_popped = Some(obj.clone());
+                self.last_popped = Some(Rc::clone(&obj));
                 Ok(obj)
             }
             None => {
@@ -64,7 +71,7 @@ impl VM {
                 OpConstant => {
                     let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
                     // opcode (1 byte) + operand (2 byte)
-                    let obj = self.constants[const_index].clone();
+                    let obj = Rc::clone(&self.constants[const_index]);
                     self.push(obj)?;
                     ip += 3;
                 }
@@ -77,11 +84,11 @@ impl VM {
                     ip += 1;
                 }
                 OpTrue => {
-                    self.push(TRUE)?;
+                    self.push(Rc::new(TRUE))?;
                     ip += 1;
                 }
                 OpFalse => {
-                    self.push(FALSE)?;
+                    self.push(Rc::new(FALSE))?;
                     ip += 1;
                 }
                 OpEqual | OpNotEqual | OpGreaterThan => {
@@ -109,14 +116,14 @@ impl VM {
                     ip = pos;
                 }
                 OpNull => {
-                    self.push(NULL)?;
+                    self.push(Rc::new(NULL))?;
                     ip += 1;
                 }
                 OpGetGlobal => {
                     let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
                     let obj = self.globals[global_index].clone();
-                    assert_ne!(obj, Object::Dummy);
+                    debug_assert_ne!(obj, Rc::new(Object::Dummy));
                     self.push(obj)?
                 }
                 OpSetGlobal => {
@@ -124,6 +131,35 @@ impl VM {
                     ip += 1 + 2;
                     let obj = self.pop()?;
                     self.globals[global_index] = obj;
+                }
+                OpArray => {
+                    let num_elements = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let mut elements = Vec::new();
+                    for _ in 0..num_elements {
+                        let e = self.pop()?;
+                        elements.push(e);
+                    }
+                    elements.reverse();
+                    self.push(Rc::new(Object::ArrayObject(elements)))?;
+                }
+                OpHash => {
+                    let num_pairs = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    ip += 1 + 2;
+                    let mut hash = HashMap::new();
+                    for _ in 0..num_pairs {
+                        let value = self.pop()?;
+                        let key = self.pop()?;
+                        let h = key.calculate_hash()?;
+                        hash.insert(h, value);
+                    }
+                    self.push(Rc::new(Object::HashObject(hash)))?;
+                }
+                OpIndex => {
+                    let index = self.pop()?;
+                    let left = self.pop()?;
+                    self.execute_index_expression(left, index)?;
+                    ip += 1;
                 }
             }
         }
@@ -133,9 +169,12 @@ impl VM {
         use Object::*;
         let right = self.pop()?;
         let left = self.pop()?;
-        match (left, right) {
+        match (left.deref(), right.deref()) {
             (Integer(left), Integer(right)) => {
-                self.execute_binary_integer_operation(op, left, right)?;
+                self.execute_binary_integer_operation(op, *left, *right)?;
+            }
+            (MonkeyString(left), MonkeyString(right)) => {
+                self.execute_binary_string_operation(op, left, right)?;
             }
             (left, right) => {
                 bail!(
@@ -159,11 +198,9 @@ impl VM {
             OpSub => left - right,
             OpMul => left * right,
             OpDiv => left / right,
-            _ => {
-                bail!("unknown integer operator: {:?}", op)
-            }
+            _ => bail!("unknown integer operator: {:?}", op),
         };
-        self.push(Object::Integer(result))?;
+        self.push(Rc::new(Object::Integer(result)))?;
         Ok(())
     }
     fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
@@ -171,15 +208,15 @@ impl VM {
         use Opcode::*;
         let right = self.pop()?;
         let left = self.pop()?;
-        match (op, left, right) {
+        match (op, left.deref(), right.deref()) {
             (op, Integer(left), Integer(right)) => {
-                self.execute_integer_comparison(op, left, right)?;
+                self.execute_integer_comparison(op, *left, *right)?;
             }
             (op, left, right) if op == OpEqual => {
-                self.push(Self::native_bool_to_boolean_object(left == right))?;
+                self.push(Rc::new(Self::native_bool_to_boolean_object(left == right)))?;
             }
             (op, left, right) if op == OpNotEqual => {
-                self.push(Self::native_bool_to_boolean_object(left != right))?;
+                self.push(Rc::new(Self::native_bool_to_boolean_object(left != right)))?;
             }
             (op, left, right) => {
                 bail!(
@@ -200,15 +237,15 @@ impl VM {
             OpGreaterThan => left > right,
             _ => bail!("unknown operator: {:?}", op),
         };
-        self.push(Self::native_bool_to_boolean_object(result))?;
+        self.push(Rc::new(Self::native_bool_to_boolean_object(result)))?;
         Ok(())
     }
     fn execute_minus_operator(&mut self) -> Result<()> {
         use Object::*;
         let operand = self.pop()?;
-        match operand {
+        match *operand {
             Integer(value) => {
-                self.push(Integer(-value))?;
+                self.push(Rc::new(Integer(-value)))?;
             }
             _ => {
                 bail!("unsupported type for negation: {}", operand.r#type());
@@ -219,22 +256,68 @@ impl VM {
     fn execute_bang_operator(&mut self) -> Result<()> {
         use Object::*;
         let operand = self.pop()?;
-        match operand {
+        match *operand {
             Boolean(value) => {
                 if value {
-                    self.push(FALSE)?;
+                    self.push(Rc::new(FALSE))?;
                 } else {
-                    self.push(TRUE)?;
+                    self.push(Rc::new(TRUE))?;
                 }
             }
             Null => {
-                self.push(TRUE)?;
+                self.push(Rc::new(TRUE))?;
             }
             _ => {
-                self.push(FALSE)?;
+                self.push(Rc::new(FALSE))?;
             }
         }
         Ok(())
+    }
+    fn execute_binary_string_operation(
+        &mut self,
+        op: Opcode,
+        left: &str,
+        right: &str,
+    ) -> Result<()> {
+        let result = match op {
+            Opcode::OpAdd => format!("{}{}", left, right),
+            _ => {
+                bail!("unknown string operator: {:?}", op);
+            }
+        };
+        self.push(Rc::new(Object::MonkeyString(result)))?;
+        Ok(())
+    }
+    fn execute_index_expression(&mut self, left: Rc<Object>, index: Rc<Object>) -> Result<()> {
+        use Object::{ArrayObject, HashObject, Integer};
+        match (left.deref(), index.deref()) {
+            (ArrayObject(elements), Integer(index)) => self.execute_array_index(elements, *index),
+            (HashObject(hash), index) => self.execute_hash_index(hash, index),
+            (left, _) => {
+                bail!("index operator not supported: {}", left.r#type());
+            }
+        }
+    }
+    fn execute_array_index(&mut self, elements: &[Rc<Object>], index: i64) -> Result<()> {
+        if index < 0 {
+            self.push(Rc::new(NULL))?;
+            return Ok(());
+        }
+        match elements.get(index as usize) {
+            None => self.push(Rc::new(NULL)),
+            Some(e) => self.push(e.clone()),
+        }
+    }
+    fn execute_hash_index(
+        &mut self,
+        hash: &HashMap<u64, Rc<Object>>,
+        index: &Object,
+    ) -> Result<()> {
+        let key = index.calculate_hash()?;
+        match hash.get(&key) {
+            None => self.push(Rc::new(NULL)),
+            Some(value) => self.push(value.clone()),
+        }
     }
     fn native_bool_to_boolean_object(value: bool) -> Object {
         if value {
@@ -252,6 +335,9 @@ impl VM {
     }
     pub fn globals(self) -> Vec<Object> {
         self.globals
+            .into_iter()
+            .map(|g| g.deref().clone())
+            .collect()
     }
 }
 
@@ -263,6 +349,8 @@ mod tests {
     use crate::parser::Parser;
     use crate::vm::{NULL, VM};
     use anyhow::{bail, ensure, Result};
+    use std::collections::HashMap;
+    use std::rc::Rc;
 
     #[test]
     fn test_integer_arithmetic() {
@@ -361,6 +449,90 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_string_expressions() {
+        let tests = vec![
+            ("  \"monkey\";  ", "monkey"),
+            ("  \"mon\" + \"key\";  ", "monkey"),
+            ("  \"mon\" + \"key\" + \"banana\";  ", "monkeybanana"),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, value)| (input, Object::MonkeyString(value.to_string())))
+            .collect();
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_array_literals() {
+        let tests = vec![
+            ("[]", vec![]),
+            ("[1]", vec![1]),
+            ("[11, 22 + 33]", vec![11, 55]),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, elements)| {
+                let elements = elements
+                    .into_iter()
+                    .map(|v| Rc::new(Object::Integer(v)))
+                    .collect();
+                (input, Object::ArrayObject(elements))
+            })
+            .collect();
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_hash_literals() {
+        let tests = vec![
+            ("{}", vec![]),
+            ("{12: 3, 4 + 56: 78 * 9}", vec![(12, 3), (4 + 56, 78 * 9)]),
+        ];
+        let tests = tests
+            .into_iter()
+            .map(|(input, pairs)| {
+                let hash = pairs
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let k = Object::Integer(k);
+                        let v = Object::Integer(v);
+                        (k.calculate_hash().unwrap(), Rc::new(v))
+                    })
+                    .collect();
+                (input, Object::HashObject(hash))
+            })
+            .collect();
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_index_expressions() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        macro_rules! null {
+            () => {
+                Object::Null
+            };
+        }
+        let tests = vec![
+            ("[1, 2, 3][1]", int!(2)),
+            ("[1, 2, 3][0 + 2]", int!(3)),
+            ("[[1, 1, 1]][0][0]", int!(1)),
+            ("[][0]", null!()),
+            ("[1, 2, 3][99]", null!()),
+            ("[1][-1]", null!()),
+            ("{1: 1, 2: 2}[1]", int!(1)),
+            ("{1: 1, 2: 2}[2]", int!(2)),
+            ("{1: 1}[0]", null!()),
+            ("{}[0]", null!()),
+        ];
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
@@ -376,7 +548,7 @@ mod tests {
             let stack_elem = vm
                 .last_popped_stack_elem()
                 .unwrap_or_else(|| panic!("there is no last popped stack element"));
-            test_expected_object(&expected, stack_elem);
+            test_expected_object(&expected, &stack_elem);
         }
     }
 
@@ -387,9 +559,21 @@ mod tests {
                 test_integer_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_integer_object failed: {:?}", err));
             }
+            MonkeyString(value) => {
+                test_string_object(value, actual)
+                    .unwrap_or_else(|err| panic!("test_string_object failed: {:?}", err));
+            }
             Boolean(value) => {
                 test_boolean_object(value, actual)
                     .unwrap_or_else(|err| panic!("test_boolean_object failed: {:?}", err));
+            }
+            ArrayObject(elements) => {
+                test_array_object(elements, actual)
+                    .unwrap_or_else(|err| panic!("test_array_object failed: {:?}", err));
+            }
+            HashObject(hash) => {
+                test_hash_object(hash, actual)
+                    .unwrap_or_else(|err| panic!("test_hash_object failed: {:?}", err));
             }
             Null => {
                 assert_eq!(&NULL, actual);
@@ -416,6 +600,24 @@ mod tests {
         Ok(())
     }
 
+    fn test_string_object(expected: &str, actual: &Object) -> Result<()> {
+        match actual {
+            Object::MonkeyString(value) => {
+                if expected != value {
+                    bail!("object has wrong value. want={}, got={}", expected, value);
+                }
+            }
+            _ => {
+                bail!(
+                    "object is not String. got={} ({:?})",
+                    actual.r#type(),
+                    actual
+                );
+            }
+        }
+        Ok(())
+    }
+
     fn test_boolean_object(expected: &bool, actual: &Object) -> Result<()> {
         match actual {
             Object::Boolean(value) => {
@@ -426,13 +628,60 @@ mod tests {
                     value
                 );
             }
+            _ => bail!(
+                "object is not Boolean. got={} ({:?})",
+                actual.r#type(),
+                actual
+            ),
+        }
+        Ok(())
+    }
+
+    fn test_array_object(expected: &Vec<Rc<Object>>, actual: &Object) -> Result<()> {
+        match actual {
+            Object::ArrayObject(elements) => {
+                ensure!(
+                    expected.len() == elements.len(),
+                    "wrong number of elements. want={}, got={}",
+                    expected.len(),
+                    elements.len()
+                );
+                for (expected, actual) in expected.iter().zip(elements.iter()) {
+                    test_expected_object(expected, actual);
+                }
+            }
             _ => {
                 bail!(
-                    "object is not Boolean. got={} ({:?})",
+                    "object is not Array. got={} ({:?})",
                     actual.r#type(),
                     actual
-                )
+                );
             }
+        }
+        Ok(())
+    }
+
+    fn test_hash_object(expected: &HashMap<u64, Rc<Object>>, actual: &Object) -> Result<()> {
+        match actual {
+            Object::HashObject(hash) => {
+                ensure!(
+                    expected.len() == hash.len(),
+                    "wrong number of pairs. want={}, got={}",
+                    expected.len(),
+                    hash.len()
+                );
+                for (expected_key, expected_value) in expected {
+                    match hash.get(expected_key) {
+                        None => {
+                            bail!("no pair for given key in pairs");
+                        }
+                        Some(actual_value) => {
+                            test_expected_object(expected_value, actual_value);
+                        }
+                    }
+                }
+            }
+            _ => bail!("object is not Hash. got={} ({:?})", actual.r#type(), actual),
         }
         Ok(())
     }

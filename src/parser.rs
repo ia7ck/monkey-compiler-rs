@@ -12,6 +12,7 @@ enum Precedence {
     PRODUCT,
     PREFIX,
     CALL,
+    INDEX,
 }
 
 impl Token {
@@ -24,6 +25,7 @@ impl Token {
             LT | GT => LESS,
             EQ | NEQ => EQUALS,
             LPAREN => CALL,
+            LBRACKET => INDEX,
             _ => LOWEST,
         }
     }
@@ -107,9 +109,7 @@ impl<'a> Parser<'a> {
                 }
                 Ok(Statement::LetStatement { name, value })
             }
-            peek => {
-                bail!("expected next token to be LET, got {:?} instead", peek)
-            }
+            peek => bail!("expected next token to be LET, got {:?} instead", peek),
         }
     }
     fn parse_expression_statement(&mut self) -> Result<Statement> {
@@ -128,11 +128,14 @@ impl<'a> Parser<'a> {
                 let value = literal.parse::<i64>()?;
                 IntegerLiteral(value)
             }
+            STRING(literal) => StringLiteral(literal.to_string()),
             MINUS | BANG => self.parse_prefix_expression()?,
             LPAREN => self.parse_grouped_expression()?,
             TRUE => Boolean(true),
             FALSE => Boolean(false),
             IF => self.parse_if_expression()?,
+            LBRACKET => self.parse_array_literal()?,
+            LBRACE => self.parse_hash_literal()?,
             _ => {
                 bail!("cannot parse: {:?}", self.cur);
             }
@@ -142,6 +145,10 @@ impl<'a> Parser<'a> {
                 PLUS | MINUS | ASTERISK | SLASH | LT | GT | EQ | NEQ => {
                     self.next_token();
                     self.parse_infix_expression(exp)?
+                }
+                LBRACKET => {
+                    self.next_token();
+                    self.parse_index_expression(exp)?
                 }
                 _ => return Ok(exp),
             };
@@ -235,6 +242,64 @@ impl<'a> Parser<'a> {
         }
         Ok(Statement::BlockStatement(statements))
     }
+    fn parse_array_literal(&mut self) -> Result<Expression> {
+        assert_eq!(self.cur, Token::LBRACKET); // [
+        self.next_token();
+        let elements = self.parse_expression_list(Token::RBRACKET)?; // ]
+        Ok(Expression::ArrayLiteral(elements))
+    }
+    fn parse_expression_list(&mut self, end: Token) -> Result<Vec<Expression>> {
+        if self.cur_token_is(&end) {
+            return Ok(vec![]);
+        }
+        let mut result = Vec::new();
+        result.push(self.parse_expression(Precedence::LOWEST)?);
+        while self.peek_token_is(&Token::COMMA) {
+            self.next_token();
+            self.next_token(); // ,
+            result.push(self.parse_expression(Precedence::LOWEST)?);
+        }
+        self.expect_peek(&end)?;
+        self.next_token();
+        Ok(result)
+    }
+    fn parse_hash_literal(&mut self) -> Result<Expression> {
+        assert_eq!(self.cur, Token::LBRACE); // {
+        let mut pairs = Vec::new();
+        while !self.peek_token_is(&Token::RBRACE) {
+            self.next_token();
+            let key = self.parse_expression(Precedence::LOWEST)?;
+
+            self.expect_peek(&Token::COLON)?; // :
+            self.next_token();
+
+            self.next_token();
+            let value = self.parse_expression(Precedence::LOWEST)?;
+            pairs.push((key, value));
+
+            if !self.peek_token_is(&Token::RBRACE) {
+                self.expect_peek(&Token::COMMA)?;
+                self.next_token();
+            }
+        }
+        self.expect_peek(&Token::RBRACE)?; // }
+        self.next_token();
+        Ok(Expression::HashLiteral(pairs))
+    }
+    fn parse_index_expression(&mut self, left: Expression) -> Result<Expression> {
+        assert_eq!(self.cur, Token::LBRACKET); // [
+        self.next_token();
+
+        let index = self.parse_expression(Precedence::LOWEST)?;
+
+        self.expect_peek(&Token::RBRACKET)?; // ]
+        self.next_token();
+
+        Ok(Expression::IndexExpression {
+            left: Box::new(left),
+            index: Box::new(index),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -315,19 +380,72 @@ mod tests {
         )
     }
 
+    #[test]
+    fn test_array_literal_expression() {
+        let program = parse("[1, 2 + 3];");
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::ArrayLiteral(vec![
+                Expression::IntegerLiteral(1),
+                Expression::InfixExpression {
+                    left: Box::new(Expression::IntegerLiteral(2)),
+                    operator: InfixOperator::PLUS,
+                    right: Box::new(Expression::IntegerLiteral(3)),
+                }
+            ]))
+        )
+    }
+
+    #[test]
+    fn test_hash_literal_expression() {
+        let program = parse(r#"  {"key": 123, 456: "val"};  "#);
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::HashLiteral(vec![
+                (
+                    Expression::StringLiteral("key".to_string()),
+                    Expression::IntegerLiteral(123)
+                ),
+                (
+                    Expression::IntegerLiteral(456),
+                    Expression::StringLiteral("val".to_string())
+                ),
+            ]))
+        )
+    }
+
+    #[test]
+    fn test_index_expression() {
+        let program = parse("arr[1 + 2]");
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::IndexExpression {
+                left: Box::new(Expression::Identifier("arr".to_string())),
+                index: Box::new(Expression::InfixExpression {
+                    left: Box::new(Expression::IntegerLiteral(1)),
+                    operator: InfixOperator::PLUS,
+                    right: Box::new(Expression::IntegerLiteral(2))
+                })
+            })
+        )
+    }
+
     impl Display for Statement {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
             match self {
-                LetStatement { .. } => {
-                    unimplemented!()
-                }
-                ExpressionStatement(exp) => {
-                    write!(f, "{}", exp)
-                }
-                BlockStatement(..) => {
-                    unimplemented!()
-                }
+                LetStatement { .. } => unimplemented!(),
+                ExpressionStatement(exp) => write!(f, "{}", exp),
+                BlockStatement(..) => unimplemented!(),
             }
         }
     }
@@ -336,28 +454,20 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Expression::*;
             match self {
-                Identifier { .. } => {
-                    unimplemented!()
-                }
-                IntegerLiteral(value) => {
-                    write!(f, "{}", value)
-                }
-                Boolean(value) => {
-                    write!(f, "{}", value)
-                }
-                PrefixExpression { operator, right } => {
-                    write!(f, "({}{})", operator, right)
-                }
+                Identifier { .. } => unimplemented!(),
+                IntegerLiteral(value) => write!(f, "{}", value),
+                StringLiteral(..) => unimplemented!(),
+                Boolean(value) => write!(f, "{}", value),
+                PrefixExpression { operator, right } => write!(f, "({}{})", operator, right),
                 InfixExpression {
                     left,
                     operator,
                     right,
-                } => {
-                    write!(f, "({} {} {})", left, operator, right)
-                }
-                IfExpression { .. } => {
-                    unimplemented!()
-                }
+                } => write!(f, "({} {} {})", left, operator, right),
+                IfExpression { .. } => unimplemented!(),
+                ArrayLiteral(..) => unimplemented!(),
+                HashLiteral(..) => unimplemented!(),
+                IndexExpression { .. } => unimplemented!(),
             }
         }
     }
@@ -366,12 +476,8 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use PrefixOperator::*;
             match self {
-                MINUS => {
-                    write!(f, "-")
-                }
-                BANG => {
-                    write!(f, "!")
-                }
+                MINUS => write!(f, "-"),
+                BANG => write!(f, "!"),
             }
         }
     }
@@ -380,30 +486,14 @@ mod tests {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use InfixOperator::*;
             match self {
-                PLUS => {
-                    write!(f, "+")
-                }
-                MINUS => {
-                    write!(f, "-")
-                }
-                ASTERISK => {
-                    write!(f, "*")
-                }
-                SLASH => {
-                    write!(f, "/")
-                }
-                LT => {
-                    write!(f, "<")
-                }
-                GT => {
-                    write!(f, ">")
-                }
-                EQ => {
-                    write!(f, "==")
-                }
-                NEQ => {
-                    write!(f, "!=")
-                }
+                PLUS => write!(f, "+"),
+                MINUS => write!(f, "-"),
+                ASTERISK => write!(f, "*"),
+                SLASH => write!(f, "/"),
+                LT => write!(f, "<"),
+                GT => write!(f, ">"),
+                EQ => write!(f, "=="),
+                NEQ => write!(f, "!="),
             }
         }
     }

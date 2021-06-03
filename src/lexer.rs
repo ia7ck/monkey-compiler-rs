@@ -23,22 +23,45 @@ impl<'a> Lexer<'a> {
         self.peek = self.input.next();
     }
     fn skip_whitespace(&mut self) {
-        while self.cur.map_or(false, |c| c.is_ascii_whitespace()) {
+        while let Some(c) = self.cur {
+            if !c.is_ascii_whitespace() {
+                break;
+            }
             self.read_char();
         }
     }
+    fn read_string(&mut self) -> String {
+        assert_eq!(self.cur, Some('"'));
+        self.read_char(); // "
+        let mut res = String::new();
+        while let Some(c) = self.cur {
+            if c == '"' {
+                break;
+            }
+            res.push(c);
+            self.read_char();
+        }
+        self.read_char(); // "
+        res
+    }
     fn read_number(&mut self) -> String {
         let mut res = String::new();
-        while self.cur.map_or(false, |c| c.is_ascii_digit()) {
-            res.push(self.cur.unwrap());
+        while let Some(c) = self.cur {
+            if !c.is_ascii_digit() {
+                break;
+            }
+            res.push(c);
             self.read_char();
         }
         res
     }
     fn read_identifier(&mut self) -> String {
         let mut res = String::new();
-        while self.cur.map_or(false, |c| c.is_ascii_alphabetic()) {
-            res.push(self.cur.unwrap());
+        while let Some(c) = self.cur {
+            if !c.is_ascii_alphabetic() {
+                break;
+            }
+            res.push(c);
             self.read_char();
         }
         res
@@ -97,9 +120,17 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 GT
             }
+            ',' => {
+                self.read_char();
+                COMMA
+            }
             ';' => {
                 self.read_char();
                 SEMICOLON
+            }
+            ':' => {
+                self.read_char();
+                COLON
             }
             '(' => {
                 self.read_char();
@@ -117,6 +148,15 @@ impl<'a> Iterator for Lexer<'a> {
                 self.read_char();
                 RBRACE
             }
+            '[' => {
+                self.read_char();
+                LBRACKET
+            }
+            ']' => {
+                self.read_char();
+                RBRACKET
+            }
+            '"' => STRING(self.read_string()),
             c if c.is_ascii_digit() => INT(self.read_number()),
             c if c.is_ascii_alphabetic() => {
                 let literal = self.read_identifier();
@@ -144,7 +184,10 @@ mod tests {
 true; false;
 1 == 1; 2 != 3; 1 < 2; 2 > 1;
 if (1 < 2) { true } else { false };
-let two = 2;"#;
+let two = 2;
+"strstr";
+[1, 2];
+{"key": 123};"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -196,6 +239,20 @@ let two = 2;"#;
             IDENT("two".to_string()),
             ASSIGN,
             INT("2".to_string()),
+            SEMICOLON,
+            STRING("strstr".to_string()),
+            SEMICOLON,
+            LBRACKET,
+            INT("1".to_string()),
+            COMMA,
+            INT("2".to_string()),
+            RBRACKET,
+            SEMICOLON,
+            LBRACE,
+            STRING("key".to_string()),
+            COLON,
+            INT("123".to_string()),
+            RBRACE,
             SEMICOLON,
         ];
         let lexer = Lexer::new(input);

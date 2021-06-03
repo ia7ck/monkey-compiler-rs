@@ -167,6 +167,31 @@ impl Compiler {
                     bail!("undefined variable {}", name);
                 }
             }
+            StringLiteral(value) => {
+                let string = MonkeyString(value);
+                let operands = &[self.add_constant(string)];
+                self.emit(OpConstant, operands);
+            }
+            ArrayLiteral(elements) => {
+                let len = elements.len();
+                for e in elements {
+                    self.compile_expression(e)?;
+                }
+                self.emit(OpArray, &[len]);
+            }
+            HashLiteral(pairs) => {
+                let len = pairs.len();
+                for (key, value) in pairs {
+                    self.compile_expression(key)?;
+                    self.compile_expression(value)?;
+                }
+                self.emit(OpHash, &[len]);
+            }
+            IndexExpression { left, index } => {
+                self.compile_expression(*left)?;
+                self.compile_expression(*index)?;
+                self.emit(OpIndex, &[]);
+            }
         }
         Ok(())
     }
@@ -245,15 +270,14 @@ pub struct Bytecode {
 mod tests {
     use crate::code::Opcode;
     use crate::code::{make, Instructions};
-    use crate::compiler::tests::Constant::Integer;
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
     use crate::object::Object;
     use crate::parser::Parser;
-    use anyhow::{bail, Result};
 
     enum Constant {
         Integer(i64),
+        MonkeyString(&'static str),
     }
     struct CompilerTestCase {
         input: &'static str,
@@ -424,6 +448,7 @@ mod tests {
 
     #[test]
     fn test_global_let_statements() {
+        use Constant::*;
         use Opcode::*;
         let tests = vec![
             CompilerTestCase {
@@ -459,6 +484,121 @@ mod tests {
                 ],
             },
         ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_string_expressions() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: r#"  "monkey"  "#,
+                expected_constants: vec![MonkeyString("monkey")],
+                expected_instructions: vec![make(OpConstant, &[0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: r#"  "mon" + "key"  "#,
+                expected_constants: vec![MonkeyString("mon"), MonkeyString("key")],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpAdd, &[]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_array_literals() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "[]",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpArray, &[0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "[11, 22 + 33]",
+                expected_constants: vec![Integer(11), Integer(22), Integer(33)],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]), // 11
+                    make(OpConstant, &[1]), // 22
+                    make(OpConstant, &[2]), // 33
+                    make(OpAdd, &[]),       // +
+                    make(OpArray, &[2]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_hash_literals() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "{}",
+                expected_constants: vec![],
+                expected_instructions: vec![make(OpHash, &[0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: "{12: 3, 4 + 56: 78 * 9}",
+                expected_constants: vec![
+                    Integer(12),
+                    Integer(3),
+                    Integer(4),
+                    Integer(56),
+                    Integer(78),
+                    Integer(9),
+                ],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]), // 12
+                    make(OpConstant, &[1]), // 3
+                    make(OpConstant, &[2]), // 4
+                    make(OpConstant, &[3]), // 56
+                    make(OpAdd, &[]),       // +
+                    make(OpConstant, &[4]), // 78
+                    make(OpConstant, &[5]), // 9
+                    make(OpMul, &[]),       // *
+                    make(OpHash, &[2]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_index_expressions() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![CompilerTestCase {
+            input: "[11, 22, 33][44 + 55]",
+            expected_constants: vec![
+                Integer(11),
+                Integer(22),
+                Integer(33),
+                Integer(44),
+                Integer(55),
+            ],
+            expected_instructions: vec![
+                make(OpConstant, &[0]), // 11
+                make(OpConstant, &[1]), // 22
+                make(OpConstant, &[2]), // 33
+                make(OpArray, &[3]),
+                make(OpConstant, &[3]), // 44
+                make(OpConstant, &[4]), // 55
+                make(OpAdd, &[]),
+                make(OpIndex, &[]),
+                make(OpPop, &[]),
+            ],
+        }];
         run_compiler_tests(tests);
     }
 
@@ -502,34 +642,38 @@ mod tests {
     }
 
     fn test_constants(expected: Vec<Constant>, actual: Vec<Object>) {
-        use Constant::*;
         assert_eq!(expected.len(), actual.len(), "wrong number of constants.",);
-        for (i, (ex, ac)) in expected.iter().zip(actual.iter()).enumerate() {
-            match ex {
-                Integer(val) => {
-                    test_integer_object(val, ac).unwrap_or_else(|err| {
-                        panic!("constant {} - test_integer_object failed: {:?}", i, err)
-                    });
+        for (i, (expected, actual)) in expected.iter().zip(actual.iter()).enumerate() {
+            match (expected, actual) {
+                (Constant::Integer(v1), Object::Integer(v2)) => {
+                    assert_eq!(
+                        v1, v2,
+                        "constant {} - Integer object has wrong value. want={}, got={}",
+                        i, v1, v2
+                    );
+                }
+                (Constant::Integer(..), obj) => {
+                    panic!(
+                        "constant {} - object is not Integer. got={}",
+                        i,
+                        obj.r#type()
+                    );
+                }
+                (Constant::MonkeyString(v1), Object::MonkeyString(v2)) => {
+                    assert_eq!(
+                        v1, v2,
+                        "constant {} - String object has wrong value. want={}, got={}",
+                        i, v1, v2
+                    );
+                }
+                (Constant::MonkeyString(..), obj) => {
+                    panic!(
+                        "constant {} - object is not String. got={}",
+                        i,
+                        obj.r#type()
+                    );
                 }
             }
         }
-    }
-
-    fn test_integer_object(expected: &i64, actual: &Object) -> Result<()> {
-        match actual {
-            Object::Integer(value) => {
-                if expected != value {
-                    bail!("object has wrong value. want={}, got={}", expected, value);
-                }
-            }
-            _ => {
-                bail!(
-                    "object is not Integer. got={} ({:?})",
-                    actual.r#type(),
-                    actual
-                );
-            }
-        }
-        Ok(())
     }
 }
