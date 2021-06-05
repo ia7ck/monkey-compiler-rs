@@ -59,7 +59,7 @@ pub fn start() {
             });
         match result {
             Ok(stack_top) => {
-                println!("{:?}", stack_top);
+                println!("{}", stack_top);
             }
             Err(err) => {
                 println!("{}", err);

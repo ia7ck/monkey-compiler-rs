@@ -1,9 +1,25 @@
 use anyhow::{bail, Result};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::rc::Rc;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HashPair {
+    key: Rc<Object>,
+    value: Rc<Object>,
+}
+
+impl HashPair {
+    pub fn new(key: Rc<Object>, value: Rc<Object>) -> Self {
+        Self { key, value }
+    }
+    pub fn value(&self) -> Rc<Object> {
+        self.value.clone()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Object {
@@ -11,7 +27,7 @@ pub enum Object {
     MonkeyString(String),
     Boolean(bool),
     ArrayObject(Vec<Rc<Object>>),
-    HashObject(HashMap<u64, Rc<Object>>),
+    HashObject(HashMap<u64, Rc<HashPair>>),
     Null,
     Dummy,
 }
@@ -49,6 +65,51 @@ impl Object {
             HashObject(..) => "HASH",
             Null => "NULL",
             Dummy => unreachable!(),
+        }
+    }
+}
+
+impl Display for Object {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use Object::*;
+        match self {
+            Integer(i) => {
+                write!(f, "{}", i)
+            }
+            MonkeyString(s) => {
+                write!(f, "\"{}\"", s)
+            }
+            Boolean(b) => {
+                write!(f, "{}", b)
+            }
+            ArrayObject(elements) => {
+                write!(f, "[")?;
+                let mut elements = elements.iter();
+                if let Some(first) = elements.next() {
+                    write!(f, "{}", first)?;
+                }
+                for e in elements {
+                    write!(f, ", {}", e)?;
+                }
+                write!(f, "]")
+            }
+            HashObject(hash) => {
+                write!(f, "{{")?;
+                let mut pairs = hash.values();
+                if let Some(first) = pairs.next() {
+                    write!(f, "{}: {}", first.key, first.value)?;
+                }
+                for p in pairs {
+                    write!(f, ", {}: {}", p.key, p.value)?;
+                }
+                write!(f, "}}")
+            }
+            Null => {
+                write!(f, "NULL")
+            }
+            Dummy => {
+                unreachable!()
+            }
         }
     }
 }

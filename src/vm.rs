@@ -1,6 +1,6 @@
 use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
-use crate::object::Object;
+use crate::object::{HashPair, Object};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -151,7 +151,7 @@ impl VM {
                         let value = self.pop()?;
                         let key = self.pop()?;
                         let h = key.calculate_hash()?;
-                        hash.insert(h, value);
+                        hash.insert(h, Rc::new(HashPair::new(key, value)));
                     }
                     self.push(Rc::new(Object::HashObject(hash)))?;
                 }
@@ -310,13 +310,13 @@ impl VM {
     }
     fn execute_hash_index(
         &mut self,
-        hash: &HashMap<u64, Rc<Object>>,
+        hash: &HashMap<u64, Rc<HashPair>>,
         index: &Object,
     ) -> Result<()> {
         let key = index.calculate_hash()?;
         match hash.get(&key) {
             None => self.push(Rc::new(NULL)),
-            Some(value) => self.push(value.clone()),
+            Some(pair) => self.push(pair.value()),
         }
     }
     fn native_bool_to_boolean_object(value: bool) -> Object {
@@ -345,11 +345,12 @@ impl VM {
 mod tests {
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
-    use crate::object::Object;
+    use crate::object::{HashPair, Object};
     use crate::parser::Parser;
     use crate::vm::{NULL, VM};
     use anyhow::{bail, ensure, Result};
     use std::collections::HashMap;
+    use std::ops::Deref;
     use std::rc::Rc;
 
     #[test]
@@ -497,7 +498,10 @@ mod tests {
                     .map(|(k, v)| {
                         let k = Object::Integer(k);
                         let v = Object::Integer(v);
-                        (k.calculate_hash().unwrap(), Rc::new(v))
+                        (
+                            k.calculate_hash().unwrap(),
+                            Rc::new(HashPair::new(Rc::new(k), Rc::new(v))),
+                        )
                     })
                     .collect();
                 (input, Object::HashObject(hash))
@@ -661,7 +665,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_hash_object(expected: &HashMap<u64, Rc<Object>>, actual: &Object) -> Result<()> {
+    fn test_hash_object(expected: &HashMap<u64, Rc<HashPair>>, actual: &Object) -> Result<()> {
         match actual {
             Object::HashObject(hash) => {
                 ensure!(
@@ -670,13 +674,16 @@ mod tests {
                     expected.len(),
                     hash.len()
                 );
-                for (expected_key, expected_value) in expected {
+                for (expected_key, expected_pair) in expected {
                     match hash.get(expected_key) {
                         None => {
                             bail!("no pair for given key in pairs");
                         }
-                        Some(actual_value) => {
-                            test_expected_object(expected_value, actual_value);
+                        Some(actual_pair) => {
+                            test_expected_object(
+                                expected_pair.value().deref(),
+                                actual_pair.value().deref(),
+                            );
                         }
                     }
                 }
