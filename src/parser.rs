@@ -85,7 +85,10 @@ impl<'a> Parser<'a> {
                 let let_stmt = self.parse_let_statement()?;
                 Ok(let_stmt)
             }
-            // Token::RETURN => {},
+            Token::RETURN => {
+                let return_stmt = self.parse_return_statement()?;
+                Ok(return_stmt)
+            }
             _ => {
                 let exp_stmt = self.parse_expression_statement()?;
                 Ok(exp_stmt)
@@ -112,6 +115,17 @@ impl<'a> Parser<'a> {
             peek => bail!("expected next token to be LET, got {:?} instead", peek),
         }
     }
+    fn parse_return_statement(&mut self) -> Result<Statement> {
+        assert_eq!(self.cur, Token::RETURN);
+        self.next_token();
+
+        let return_value = self.parse_expression(Precedence::LOWEST)?;
+
+        if self.peek_token_is(&Token::SEMICOLON) {
+            self.next_token();
+        }
+        Ok(Statement::ReturnStatement(return_value))
+    }
     fn parse_expression_statement(&mut self) -> Result<Statement> {
         let exp = self.parse_expression(Precedence::LOWEST)?;
         if self.peek_token_is(&Token::SEMICOLON) {
@@ -136,6 +150,7 @@ impl<'a> Parser<'a> {
             IF => self.parse_if_expression()?,
             LBRACKET => self.parse_array_literal()?,
             LBRACE => self.parse_hash_literal()?,
+            FUNCTION => self.parse_function_literal()?,
             _ => {
                 bail!("cannot parse: {:?}", self.cur);
             }
@@ -145,6 +160,10 @@ impl<'a> Parser<'a> {
                 PLUS | MINUS | ASTERISK | SLASH | LT | GT | EQ | NEQ => {
                     self.next_token();
                     self.parse_infix_expression(exp)?
+                }
+                LPAREN => {
+                    self.next_token();
+                    self.parse_call_expression(exp)?
                 }
                 LBRACKET => {
                     self.next_token();
@@ -300,6 +319,66 @@ impl<'a> Parser<'a> {
             index: Box::new(index),
         })
     }
+    fn parse_function_literal(&mut self) -> Result<Expression> {
+        assert_eq!(self.cur, Token::FUNCTION); // fn
+        self.expect_peek(&Token::LPAREN)?; // (
+        self.next_token();
+
+        let parameters = self.parse_function_parameters()?;
+
+        self.expect_peek(&Token::LBRACE)?; // {
+        self.next_token();
+
+        let body = self.parse_block_statement()?;
+        Ok(Expression::FunctionLiteral {
+            parameters,
+            body: Box::new(body),
+        })
+    }
+    fn parse_function_parameters(&mut self) -> Result<Vec<Expression>> {
+        if self.peek_token_is(&Token::RPAREN) {
+            self.next_token();
+            return Ok(vec![]);
+        }
+
+        self.next_token();
+        let mut identifiers = Vec::new();
+        let mut push_identifier = |current_token: &Token| -> Result<()> {
+            match current_token {
+                Token::IDENT(literal) => {
+                    identifiers.push(Expression::Identifier(literal.to_string()));
+                }
+                token => {
+                    bail!(
+                        "expected current token to be IDENT, got {:?} instead",
+                        token
+                    );
+                }
+            }
+            Ok(())
+        };
+        push_identifier(&self.cur)?;
+
+        while self.peek_token_is(&Token::COMMA) {
+            self.next_token();
+            self.next_token();
+            push_identifier(&self.cur)?;
+        }
+        self.expect_peek(&Token::RPAREN)?;
+        self.next_token();
+
+        Ok(identifiers)
+    }
+    fn parse_call_expression(&mut self, function: Expression) -> Result<Expression> {
+        assert_eq!(self.cur, Token::LPAREN);
+        self.next_token();
+
+        let arguments = self.parse_expression_list(Token::RPAREN)?;
+        Ok(Expression::CallExpression {
+            function: Box::new(function),
+            arguments,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -439,11 +518,55 @@ mod tests {
         )
     }
 
+    #[test]
+    fn test_function_literal_expression() {
+        let program = parse("fn(x) { return x + 1; }");
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::FunctionLiteral {
+                parameters: vec![Expression::Identifier("x".to_string())],
+                body: Box::new(Statement::BlockStatement(vec![Statement::ReturnStatement(
+                    Expression::InfixExpression {
+                        left: Box::new(Expression::Identifier("x".to_string())),
+                        operator: InfixOperator::PLUS,
+                        right: Box::new(Expression::IntegerLiteral(1)),
+                    }
+                )])),
+            })
+        );
+    }
+
+    #[test]
+    fn test_call_expression() {
+        let program = parse("add(1, 2 + 3)");
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::ExpressionStatement(Expression::CallExpression {
+                function: Box::new(Expression::Identifier("add".to_string())),
+                arguments: vec![
+                    Expression::IntegerLiteral(1),
+                    Expression::InfixExpression {
+                        left: Box::new(Expression::IntegerLiteral(2)),
+                        operator: InfixOperator::PLUS,
+                        right: Box::new(Expression::IntegerLiteral(3))
+                    }
+                ]
+            })
+        )
+    }
+
     impl Display for Statement {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             use Statement::*;
             match self {
                 LetStatement { .. } => unimplemented!(),
+                ReturnStatement(..) => unimplemented!(),
                 ExpressionStatement(exp) => write!(f, "{}", exp),
                 BlockStatement(..) => unimplemented!(),
             }
@@ -468,6 +591,8 @@ mod tests {
                 ArrayLiteral(..) => unimplemented!(),
                 HashLiteral(..) => unimplemented!(),
                 IndexExpression { .. } => unimplemented!(),
+                FunctionLiteral { .. } => unimplemented!(),
+                CallExpression { .. } => unimplemented!(),
             }
         }
     }

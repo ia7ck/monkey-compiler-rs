@@ -47,6 +47,7 @@ impl Compiler {
                 let symbol = self.symbol_table.define(&name);
                 self.emit(Opcode::OpSetGlobal, &[symbol.index()]);
             }
+            ReturnStatement(..) => todo!(),
             ExpressionStatement(exp) => {
                 self.compile_expression(exp)?;
                 self.emit(Opcode::OpPop, &[]);
@@ -192,6 +193,8 @@ impl Compiler {
                 self.compile_expression(*index)?;
                 self.emit(OpIndex, &[]);
             }
+            FunctionLiteral { .. } => todo!(),
+            CallExpression { .. } => todo!(),
         }
         Ok(())
     }

@@ -187,7 +187,8 @@ if (1 < 2) { true } else { false };
 let two = 2;
 "strstr";
 [1, 2];
-{"key": 123};"#;
+{"key": 123};
+fn(x) { return x + 1;};"#;
         let tests = vec![
             INT("1".to_string()),
             PLUS,
@@ -252,6 +253,18 @@ let two = 2;
             STRING("key".to_string()),
             COLON,
             INT("123".to_string()),
+            RBRACE,
+            SEMICOLON,
+            FUNCTION,
+            LPAREN,
+            IDENT("x".to_string()),
+            RPAREN,
+            LBRACE,
+            RETURN,
+            IDENT("x".to_string()),
+            PLUS,
+            INT("1".to_string()),
+            SEMICOLON,
             RBRACE,
             SEMICOLON,
         ];

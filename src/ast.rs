@@ -15,6 +15,7 @@ impl Program {
 #[derive(Debug, PartialEq)]
 pub enum Statement {
     LetStatement { name: String, value: Expression },
+    ReturnStatement(Expression),
     ExpressionStatement(Expression),
     BlockStatement(Vec<Statement>),
 }
@@ -44,6 +45,14 @@ pub enum Expression {
     IndexExpression {
         left: Box<Expression>,
         index: Box<Expression>,
+    },
+    FunctionLiteral {
+        parameters: Vec<Expression>,
+        body: Box<Statement>,
+    },
+    CallExpression {
+        function: Box<Expression>, // identifier or function literal
+        arguments: Vec<Expression>,
     },
 }
 
