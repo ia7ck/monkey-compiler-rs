@@ -73,15 +73,9 @@ impl Display for Object {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use Object::*;
         match self {
-            Integer(i) => {
-                write!(f, "{}", i)
-            }
-            MonkeyString(s) => {
-                write!(f, "\"{}\"", s)
-            }
-            Boolean(b) => {
-                write!(f, "{}", b)
-            }
+            Integer(i) => write!(f, "{}", i),
+            MonkeyString(s) => write!(f, "\"{}\"", s),
+            Boolean(b) => write!(f, "{}", b),
             ArrayObject(elements) => {
                 write!(f, "[")?;
                 let mut elements = elements.iter();
@@ -104,12 +98,8 @@ impl Display for Object {
                 }
                 write!(f, "}}")
             }
-            Null => {
-                write!(f, "NULL")
-            }
-            Dummy => {
-                unreachable!()
-            }
+            Null => write!(f, "NULL"),
+            Dummy => unreachable!(),
         }
     }
 }
