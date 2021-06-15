@@ -6,7 +6,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::iter::FromIterator;
 use std::ops::{Index, IndexMut};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Instructions(Vec<u8>);
 impl Instructions {
     pub fn new() -> Self {
@@ -112,6 +112,9 @@ pub enum Opcode {
     OpArray,
     OpHash,
     OpIndex,
+    OpCall,
+    OpReturnValue,
+    OpReturn,
 }
 
 pub struct Definition {
@@ -155,6 +158,9 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpArray, vec![2]),
         Definition::new(OpHash, vec![2]),
         Definition::new(OpIndex, vec![]),
+        Definition::new(OpCall, vec![]),
+        Definition::new(OpReturnValue, vec![]),
+        Definition::new(OpReturn, vec![]),
     ]
 });
 

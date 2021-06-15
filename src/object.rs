@@ -1,3 +1,4 @@
+use crate::code::Instructions;
 use anyhow::{bail, Result};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -28,6 +29,7 @@ pub enum Object {
     Boolean(bool),
     ArrayObject(Vec<Rc<Object>>),
     HashObject(HashMap<u64, Rc<HashPair>>),
+    CompiledFunctionObject(Instructions),
     Null,
     Dummy,
 }
@@ -63,6 +65,7 @@ impl Object {
             Boolean(..) => "BOOLEAN",
             ArrayObject(..) => "ARRAY",
             HashObject(..) => "HASH",
+            CompiledFunctionObject(..) => "COMPILED_FUNCTION",
             Null => "NULL",
             Dummy => unreachable!(),
         }
@@ -98,6 +101,7 @@ impl Display for Object {
                 }
                 write!(f, "}}")
             }
+            CompiledFunctionObject(..) => write!(f, "CompiledFunction[{:p}]", self),
             Null => write!(f, "NULL"),
             Dummy => unreachable!(),
         }

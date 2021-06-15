@@ -161,6 +161,7 @@ impl VM {
                     self.execute_index_expression(left, index)?;
                     ip += 1;
                 }
+                _ => todo!(),
             }
         }
         Ok(())
@@ -579,6 +580,7 @@ mod tests {
                 test_hash_object(hash, actual)
                     .unwrap_or_else(|err| panic!("test_hash_object failed: {:?}", err));
             }
+            CompiledFunctionObject(..) => todo!(),
             Null => {
                 assert_eq!(&NULL, actual);
             }
