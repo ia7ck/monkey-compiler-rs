@@ -1,5 +1,7 @@
 use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
+use crate::frame::Frame;
+use crate::object;
 use crate::object::{HashPair, Object};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
@@ -8,28 +10,38 @@ use std::rc::Rc;
 
 const STACK_SIZE: usize = 2048;
 pub(crate) const GLOBAL_SIZE: usize = 65536;
+const MAX_FRAME: usize = 1024;
 
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
 
 pub struct VM {
-    instructions: Instructions,
     constants: Vec<Rc<Object>>,
+
     stack: Vec<Rc<Object>>,
     last_popped: Option<Rc<Object>>,
+
     globals: Vec<Rc<Object>>,
+
+    frames: Vec<Frame>,
+    frames_index: usize,
 }
 
 impl VM {
     pub fn new(bytecode: Bytecode) -> Self {
         let constants = bytecode.constants.into_iter().map(Rc::new).collect();
+        let mut frames =
+            vec![Frame::new(object::CompiledFunctionObject::new(Instructions::new())); MAX_FRAME];
+        let main_function = object::CompiledFunctionObject::new(bytecode.instructions);
+        frames[0] = Frame::new(main_function);
         Self {
-            instructions: bytecode.instructions,
             constants,
             stack: Vec::with_capacity(STACK_SIZE),
             last_popped: None,
             globals: vec![Rc::new(Object::Dummy); GLOBAL_SIZE],
+            frames,
+            frames_index: 1,
         }
     }
     pub fn new_with_global_store(bytecode: Bytecode, globals: &[Object]) -> Self {
@@ -63,13 +75,14 @@ impl VM {
     }
     pub fn run(&mut self) -> Result<()> {
         use Opcode::*;
-        let mut ip = 0;
-        while ip < self.instructions.len() {
-            let def = &DEFINITIONS[self.instructions[ip] as usize];
+        while self.current_frame().ip() < self.current_frame().instructions().len() {
+            let mut ip = self.current_frame().ip();
+            let instructions = self.current_frame_mut().instructions_mut();
+            let def = &DEFINITIONS[instructions[ip] as usize];
             let op = def.opcode();
             match op {
                 OpConstant => {
-                    let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let const_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     // opcode (1 byte) + operand (2 byte)
                     let obj = Rc::clone(&self.constants[const_index]);
                     self.push(obj)?;
@@ -104,7 +117,7 @@ impl VM {
                     ip += 1;
                 }
                 OpJumpNotTruthy => {
-                    let pos = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let pos = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2; // opcode (1byte) + operand (2byte)
                     let condition = self.pop()?;
                     if !Self::is_truthy(&condition) {
@@ -112,7 +125,7 @@ impl VM {
                     }
                 }
                 OpJump => {
-                    let pos = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let pos = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip = pos;
                 }
                 OpNull => {
@@ -120,20 +133,20 @@ impl VM {
                     ip += 1;
                 }
                 OpGetGlobal => {
-                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
                     let obj = self.globals[global_index].clone();
                     debug_assert_ne!(obj, Rc::new(Object::Dummy));
                     self.push(obj)?
                 }
                 OpSetGlobal => {
-                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
                     let obj = self.pop()?;
                     self.globals[global_index] = obj;
                 }
                 OpArray => {
-                    let num_elements = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let num_elements = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
                     let mut elements = Vec::new();
                     for _ in 0..num_elements {
@@ -144,7 +157,7 @@ impl VM {
                     self.push(Rc::new(Object::ArrayObject(elements)))?;
                 }
                 OpHash => {
-                    let num_pairs = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let num_pairs = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
                     let mut hash = HashMap::new();
                     for _ in 0..num_pairs {
@@ -161,8 +174,36 @@ impl VM {
                     self.execute_index_expression(left, index)?;
                     ip += 1;
                 }
-                _ => todo!(),
+                OpCall => {
+                    match self.stack[self.stack.len() - 1].deref() {
+                        Object::CompiledFunctionObject(func) => {
+                            let frame = Frame::new(func.clone());
+                            self.push_frame(frame);
+                        }
+                        obj => {
+                            bail!("calling non-function: {:?}", obj);
+                        }
+                    }
+                    continue;
+                }
+                OpReturnValue => {
+                    let return_value = self.pop()?;
+
+                    self.pop_frame();
+                    self.pop()?;
+
+                    self.push(return_value)?;
+                    ip = self.current_frame().ip() + 1;
+                }
+                OpReturn => {
+                    self.pop_frame();
+                    self.pop()?;
+
+                    self.push(Rc::new(NULL))?;
+                    ip = self.current_frame().ip() + 1;
+                }
             }
+            self.current_frame_mut().update_ip(ip);
         }
         Ok(())
     }
@@ -339,6 +380,20 @@ impl VM {
             .into_iter()
             .map(|g| g.deref().clone())
             .collect()
+    }
+    fn current_frame(&self) -> &Frame {
+        &self.frames[self.frames_index - 1]
+    }
+    fn current_frame_mut(&mut self) -> &mut Frame {
+        &mut self.frames[self.frames_index - 1]
+    }
+    fn push_frame(&mut self, frame: Frame) {
+        self.frames[self.frames_index] = frame;
+        self.frames_index += 1;
+    }
+    fn pop_frame(&mut self) -> &Frame {
+        self.frames_index -= 1;
+        &self.frames[self.frames_index]
     }
 }
 
@@ -538,6 +593,109 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_calling_functions_without_arguments() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let fivePlusTen = fn() { 10 + 5 };
+                fivePlusTen();
+                "#,
+                int!(15),
+            ),
+            (
+                r#"
+                let one = fn() { 1; };
+                let two = fn() { 2; };
+                one() + two()
+                "#,
+                int!(3),
+            ),
+            (
+                r#"
+                let a = fn() { 1 };
+                let b = fn() { a() + 1 };
+                let c = fn() { b() + 1 };
+                c();
+                "#,
+                int!(3),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_functions_with_return_statement() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let earlyExit = fn() { return 99; 100; };
+                earlyExit();
+                "#,
+                int!(99),
+            ),
+            (
+                r#"
+                let earlyExit = fn() { return 99; return 100; };
+                earlyExit();
+                "#,
+                int!(99),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_functions_without_return_value() {
+        let tests = vec![
+            (
+                r#"
+                let noReturn = fn() { };
+                noReturn();
+                "#,
+                NULL,
+            ),
+            (
+                r#"
+                let noReturn = fn() { };
+                let noReturnTwo = fn() { noReturn(); };
+                noReturn();
+                noReturnTwo();
+                "#,
+                NULL,
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_first_class_functions() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![(
+            r#"
+                let returnsOne = fn() { 1; };
+                let returnsOneReturner = fn() { returnsOne; };
+                returnsOneReturner()();
+                "#,
+            int!(1),
+        )];
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
@@ -580,7 +738,7 @@ mod tests {
                 test_hash_object(hash, actual)
                     .unwrap_or_else(|err| panic!("test_hash_object failed: {:?}", err));
             }
-            CompiledFunctionObject(..) => todo!(),
+            CompiledFunctionObject(..) => unimplemented!(),
             Null => {
                 assert_eq!(&NULL, actual);
             }

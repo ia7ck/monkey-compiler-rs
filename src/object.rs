@@ -29,7 +29,7 @@ pub enum Object {
     Boolean(bool),
     ArrayObject(Vec<Rc<Object>>),
     HashObject(HashMap<u64, Rc<HashPair>>),
-    CompiledFunctionObject(Instructions),
+    CompiledFunctionObject(CompiledFunctionObject),
     Null,
     Dummy,
 }
@@ -105,5 +105,22 @@ impl Display for Object {
             Null => write!(f, "NULL"),
             Dummy => unreachable!(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledFunctionObject {
+    pub(crate) instructions: Instructions,
+}
+
+impl CompiledFunctionObject {
+    pub fn new(instructions: Instructions) -> Self {
+        Self { instructions }
+    }
+    pub fn instructions(&self) -> &Instructions {
+        &self.instructions
+    }
+    pub fn instructions_mut(&mut self) -> &mut Instructions {
+        &mut self.instructions
     }
 }
