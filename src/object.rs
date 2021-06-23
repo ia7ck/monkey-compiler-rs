@@ -29,7 +29,7 @@ pub enum Object {
     Boolean(bool),
     ArrayObject(Vec<Rc<Object>>),
     HashObject(HashMap<u64, Rc<HashPair>>),
-    CompiledFunctionObject(CompiledFunctionObject),
+    CompiledFunctionObject(Rc<CompiledFunctionObject>),
     Null,
     Dummy,
 }
@@ -123,9 +123,6 @@ impl CompiledFunctionObject {
     }
     pub fn instructions(&self) -> &Instructions {
         &self.instructions
-    }
-    pub fn instructions_mut(&mut self) -> &mut Instructions {
-        &mut self.instructions
     }
     pub fn num_locals(&self) -> usize {
         self.num_locals

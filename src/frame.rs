@@ -1,15 +1,16 @@
 use crate::code::Instructions;
 use crate::object::CompiledFunctionObject;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct Frame {
-    function: CompiledFunctionObject,
+    function: Rc<CompiledFunctionObject>,
     ip: usize,
     base_pointer: usize,
 }
 
 impl Frame {
-    pub fn new(function: CompiledFunctionObject, base_pointer: usize) -> Self {
+    pub fn new(function: Rc<CompiledFunctionObject>, base_pointer: usize) -> Self {
         Frame {
             function,
             ip: 0,
@@ -18,9 +19,6 @@ impl Frame {
     }
     pub fn instructions(&self) -> &Instructions {
         self.function.instructions()
-    }
-    pub fn instructions_mut(&mut self) -> &mut Instructions {
-        self.function.instructions_mut()
     }
     pub fn ip(&self) -> usize {
         self.ip

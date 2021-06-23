@@ -33,13 +33,13 @@ impl VM {
         let constants = bytecode.constants.into_iter().map(Rc::new).collect();
         let mut frames = vec![
             Frame::new(
-                object::CompiledFunctionObject::new(Instructions::new(), 0),
+                Rc::new(object::CompiledFunctionObject::new(Instructions::new(), 0)),
                 0
             );
             MAX_FRAME
         ];
         let main_function = object::CompiledFunctionObject::new(bytecode.instructions, 0);
-        frames[0] = Frame::new(main_function, 0);
+        frames[0] = Frame::new(Rc::new(main_function), 0);
         Self {
             constants,
             stack: vec![Rc::new(Object::Dummy); STACK_SIZE],
@@ -75,7 +75,7 @@ impl VM {
         use Opcode::*;
         while self.current_frame().ip() < self.current_frame().instructions().len() {
             let mut ip = self.current_frame().ip();
-            let instructions = self.current_frame_mut().instructions_mut();
+            let instructions = self.current_frame().instructions();
             let def = &DEFINITIONS[instructions[ip] as usize];
             let op = def.opcode();
             match op {
@@ -173,11 +173,11 @@ impl VM {
                     ip += 1;
                 }
                 OpCall => {
-                    match self.stack[self.sp - 1].deref().clone() {
+                    match Rc::clone(&self.stack[self.sp - 1]).deref() {
                         Object::CompiledFunctionObject(func) => {
-                            let frame = Frame::new(func.clone(), self.sp);
-                            self.push_frame(frame.clone());
+                            let frame = Frame::new(Rc::clone(func), self.sp);
                             self.sp = frame.base_pointer() + func.num_locals();
+                            self.push_frame(frame);
                         }
                         obj => {
                             bail!("calling non-function: {:?}", obj);

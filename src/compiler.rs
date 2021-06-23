@@ -5,6 +5,7 @@ use crate::object::Object;
 use crate::symbol_table::{SymbolScope, SymbolTable};
 use anyhow::{bail, Result};
 use std::borrow::Borrow;
+use std::rc::Rc;
 
 pub struct Compiler {
     constants: Vec<Object>,
@@ -246,9 +247,9 @@ impl Compiler {
 
                 let num_locals = self.symbol_table.num_definitions();
                 let instructions = self.leave_scope();
-                let compiled_function = CompiledFunctionObject(
+                let compiled_function = CompiledFunctionObject(Rc::new(
                     object::CompiledFunctionObject::new(instructions, num_locals),
-                );
+                ));
                 let operands = &[self.add_constant(compiled_function)];
                 self.emit(OpConstant, operands);
             }
@@ -386,7 +387,6 @@ mod tests {
     use crate::code::{make, Instructions};
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
-    use crate::object;
     use crate::object::Object;
     use crate::parser::Parser;
 
@@ -955,14 +955,8 @@ mod tests {
                         obj.r#type()
                     );
                 }
-                (
-                    Constant::Function(ins1),
-                    Object::CompiledFunctionObject(object::CompiledFunctionObject {
-                        instructions: ins2,
-                        ..
-                    }),
-                ) => {
-                    test_instructions(ins1, ins2);
+                (Constant::Function(ins1), Object::CompiledFunctionObject(func)) => {
+                    test_instructions(ins1, func.instructions().clone());
                 }
                 (Constant::Function(..), obj) => {
                     panic!(
