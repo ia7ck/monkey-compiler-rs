@@ -15,6 +15,7 @@ const MAX_FRAME: usize = 1024;
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
+const DUMMY: Object = Object::Dummy;
 
 pub struct VM {
     constants: Vec<Rc<Object>>,
@@ -42,9 +43,9 @@ impl VM {
         frames[0] = Frame::new(Rc::new(main_function), 0);
         Self {
             constants,
-            stack: vec![Rc::new(Object::Dummy); STACK_SIZE],
+            stack: vec![Rc::new(DUMMY); STACK_SIZE],
             sp: 0,
-            globals: vec![Rc::new(Object::Dummy); GLOBAL_SIZE],
+            globals: vec![Rc::new(DUMMY); GLOBAL_SIZE],
             frames,
             frames_index: 1,
         }
@@ -67,7 +68,7 @@ impl VM {
     }
     fn pop(&mut self) -> Rc<Object> {
         let obj = Rc::clone(&self.stack[self.sp - 1]);
-        debug_assert_ne!(obj, Rc::new(Object::Dummy));
+        debug_assert_ne!(obj, Rc::new(DUMMY));
         self.sp -= 1;
         obj
     }
@@ -133,8 +134,8 @@ impl VM {
                 OpGetGlobal => {
                     let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
-                    let obj = self.globals[global_index].clone();
-                    debug_assert_ne!(obj, Rc::new(Object::Dummy));
+                    let obj = Rc::clone(&self.globals[global_index]);
+                    debug_assert_ne!(obj, Rc::new(DUMMY));
                     self.push(obj)?
                 }
                 OpSetGlobal => {
