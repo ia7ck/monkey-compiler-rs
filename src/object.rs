@@ -110,7 +110,7 @@ impl Display for Object {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledFunctionObject {
-    pub(crate) instructions: Instructions,
+    instructions: Instructions,
     num_locals: usize,
 }
 

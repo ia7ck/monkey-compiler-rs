@@ -9,7 +9,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 const STACK_SIZE: usize = 2048;
-pub(crate) const GLOBAL_SIZE: usize = 65536;
+const GLOBAL_SIZE: usize = 65536;
 const MAX_FRAME: usize = 1024;
 
 const TRUE: Object = Object::Boolean(true);
