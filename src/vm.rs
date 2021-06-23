@@ -1,4 +1,4 @@
-use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
+use crate::code::{read_uint16, read_uint8, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::frame::Frame;
 use crate::object;
@@ -20,7 +20,7 @@ pub struct VM {
     constants: Vec<Rc<Object>>,
 
     stack: Vec<Rc<Object>>,
-    last_popped: Option<Rc<Object>>,
+    sp: usize,
 
     globals: Vec<Rc<Object>>,
 
@@ -31,14 +31,19 @@ pub struct VM {
 impl VM {
     pub fn new(bytecode: Bytecode) -> Self {
         let constants = bytecode.constants.into_iter().map(Rc::new).collect();
-        let mut frames =
-            vec![Frame::new(object::CompiledFunctionObject::new(Instructions::new())); MAX_FRAME];
-        let main_function = object::CompiledFunctionObject::new(bytecode.instructions);
-        frames[0] = Frame::new(main_function);
+        let mut frames = vec![
+            Frame::new(
+                object::CompiledFunctionObject::new(Instructions::new(), 0),
+                0
+            );
+            MAX_FRAME
+        ];
+        let main_function = object::CompiledFunctionObject::new(bytecode.instructions, 0);
+        frames[0] = Frame::new(main_function, 0);
         Self {
             constants,
-            stack: Vec::with_capacity(STACK_SIZE),
-            last_popped: None,
+            stack: vec![Rc::new(Object::Dummy); STACK_SIZE],
+            sp: 0,
             globals: vec![Rc::new(Object::Dummy); GLOBAL_SIZE],
             frames,
             frames_index: 1,
@@ -49,29 +54,22 @@ impl VM {
         machine.globals = globals.iter().map(|g| Rc::new(g.clone())).collect();
         machine
     }
-    pub fn last_popped_stack_elem(&self) -> Option<Rc<Object>> {
-        match &self.last_popped {
-            Some(last) => Some(Rc::clone(last)),
-            None => None,
-        }
+    pub fn last_popped_stack_elem(&self) -> Rc<Object> {
+        Rc::clone(&self.stack[self.sp])
     }
     fn push(&mut self, obj: Rc<Object>) -> Result<()> {
-        if self.stack.len() >= STACK_SIZE {
+        if self.sp >= STACK_SIZE {
             bail!("stack overflow");
         }
-        self.stack.push(obj);
+        self.stack[self.sp] = obj;
+        self.sp += 1;
         Ok(())
     }
-    fn pop(&mut self) -> Result<Rc<Object>> {
-        match self.stack.pop() {
-            Some(obj) => {
-                self.last_popped = Some(Rc::clone(&obj));
-                Ok(obj)
-            }
-            None => {
-                bail!("stack is empty");
-            }
-        }
+    fn pop(&mut self) -> Rc<Object> {
+        let obj = Rc::clone(&self.stack[self.sp - 1]);
+        debug_assert_ne!(obj, Rc::new(Object::Dummy));
+        self.sp -= 1;
+        obj
     }
     pub fn run(&mut self) -> Result<()> {
         use Opcode::*;
@@ -89,7 +87,7 @@ impl VM {
                     ip += 3;
                 }
                 OpPop => {
-                    self.pop()?;
+                    self.pop();
                     ip += 1;
                 }
                 OpAdd | OpSub | OpMul | OpDiv => {
@@ -119,7 +117,7 @@ impl VM {
                 OpJumpNotTruthy => {
                     let pos = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2; // opcode (1byte) + operand (2byte)
-                    let condition = self.pop()?;
+                    let condition = self.pop();
                     if !Self::is_truthy(&condition) {
                         ip = pos;
                     }
@@ -142,7 +140,7 @@ impl VM {
                 OpSetGlobal => {
                     let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
-                    let obj = self.pop()?;
+                    let obj = self.pop();
                     self.globals[global_index] = obj;
                 }
                 OpArray => {
@@ -150,7 +148,7 @@ impl VM {
                     ip += 1 + 2;
                     let mut elements = Vec::new();
                     for _ in 0..num_elements {
-                        let e = self.pop()?;
+                        let e = self.pop();
                         elements.push(e);
                     }
                     elements.reverse();
@@ -161,24 +159,25 @@ impl VM {
                     ip += 1 + 2;
                     let mut hash = HashMap::new();
                     for _ in 0..num_pairs {
-                        let value = self.pop()?;
-                        let key = self.pop()?;
+                        let value = self.pop();
+                        let key = self.pop();
                         let h = key.calculate_hash()?;
                         hash.insert(h, Rc::new(HashPair::new(key, value)));
                     }
                     self.push(Rc::new(Object::HashObject(hash)))?;
                 }
                 OpIndex => {
-                    let index = self.pop()?;
-                    let left = self.pop()?;
+                    let index = self.pop();
+                    let left = self.pop();
                     self.execute_index_expression(left, index)?;
                     ip += 1;
                 }
                 OpCall => {
-                    match self.stack[self.stack.len() - 1].deref() {
+                    match self.stack[self.sp - 1].deref().clone() {
                         Object::CompiledFunctionObject(func) => {
-                            let frame = Frame::new(func.clone());
-                            self.push_frame(frame);
+                            let frame = Frame::new(func.clone(), self.sp);
+                            self.push_frame(frame.clone());
+                            self.sp = frame.base_pointer() + func.num_locals();
                         }
                         obj => {
                             bail!("calling non-function: {:?}", obj);
@@ -187,20 +186,32 @@ impl VM {
                     continue;
                 }
                 OpReturnValue => {
-                    let return_value = self.pop()?;
+                    let return_value = self.pop();
 
-                    self.pop_frame();
-                    self.pop()?;
+                    let base_pointer = self.pop_frame().base_pointer();
+                    self.sp = base_pointer - 1;
 
                     self.push(return_value)?;
                     ip = self.current_frame().ip() + 1;
                 }
                 OpReturn => {
-                    self.pop_frame();
-                    self.pop()?;
+                    let base_pointer = self.pop_frame().base_pointer();
+                    self.sp = base_pointer - 1;
 
                     self.push(Rc::new(NULL))?;
                     ip = self.current_frame().ip() + 1;
+                }
+                OpGetLocal => {
+                    let local_index = read_uint8(instructions.rest(ip + 1)) as usize;
+                    let base_pointer = self.current_frame().base_pointer();
+                    self.push(Rc::clone(&self.stack[base_pointer + local_index]))?;
+                    ip = self.current_frame().ip() + 1 + 1;
+                }
+                OpSetLocal => {
+                    let local_index = read_uint8(instructions.rest(ip + 1)) as usize;
+                    let base_pointer = self.current_frame().base_pointer();
+                    self.stack[base_pointer + local_index] = self.pop();
+                    ip = self.current_frame().ip() + 1 + 1;
                 }
             }
             self.current_frame_mut().update_ip(ip);
@@ -209,8 +220,8 @@ impl VM {
     }
     fn execute_binary_operation(&mut self, op: Opcode) -> Result<()> {
         use Object::*;
-        let right = self.pop()?;
-        let left = self.pop()?;
+        let right = self.pop();
+        let left = self.pop();
         match (left.deref(), right.deref()) {
             (Integer(left), Integer(right)) => {
                 self.execute_binary_integer_operation(op, *left, *right)?;
@@ -248,8 +259,8 @@ impl VM {
     fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
         use Object::*;
         use Opcode::*;
-        let right = self.pop()?;
-        let left = self.pop()?;
+        let right = self.pop();
+        let left = self.pop();
         match (op, left.deref(), right.deref()) {
             (op, Integer(left), Integer(right)) => {
                 self.execute_integer_comparison(op, *left, *right)?;
@@ -284,7 +295,7 @@ impl VM {
     }
     fn execute_minus_operator(&mut self) -> Result<()> {
         use Object::*;
-        let operand = self.pop()?;
+        let operand = self.pop();
         match *operand {
             Integer(value) => {
                 self.push(Rc::new(Integer(-value)))?;
@@ -297,7 +308,7 @@ impl VM {
     }
     fn execute_bang_operator(&mut self) -> Result<()> {
         use Object::*;
-        let operand = self.pop()?;
+        let operand = self.pop();
         match *operand {
             Boolean(value) => {
                 if value {
@@ -685,14 +696,60 @@ mod tests {
                 Object::Integer($x)
             };
         }
-        let tests = vec![(
-            r#"
+        let tests = vec![
+            (
+                r#"
                 let returnsOne = fn() { 1; };
                 let returnsOneReturner = fn() { returnsOne; };
                 returnsOneReturner()();
                 "#,
-            int!(1),
-        )];
+                int!(1),
+            ),
+            (
+                r#"
+                let returnsOneReturner = fn() {
+                    let returnsOne = fn() { 1; };
+                    returnsOne;
+                };
+                returnsOneReturner()();
+                "#,
+                int!(1),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_calling_functions_with_bindings() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let one = fn() { let one = 1; one };
+                one();
+                "#,
+                int!(1),
+            ),
+            (
+                r#"
+                let oneAndTwo = fn() { let one = 1; let two = 2; one + two; };
+                oneAndTwo();
+                "#,
+                int!(3),
+            ),
+            (
+                r#"
+                let globalSeed = 50;
+                let minusOne = fn() { let num = 1; globalSeed - num };
+                minusOne();
+                "#,
+                int!(49),
+            ),
+        ];
         run_vm_tests(tests);
     }
 
@@ -708,9 +765,7 @@ mod tests {
             let bytecode = compiler.bytecode();
             let mut vm = VM::new(bytecode);
             vm.run().unwrap_or_else(|err| panic!("vm error: {:?}", err));
-            let stack_elem = vm
-                .last_popped_stack_elem()
-                .unwrap_or_else(|| panic!("there is no last popped stack element"));
+            let stack_elem = vm.last_popped_stack_elem();
             test_expected_object(&expected, &stack_elem);
         }
     }

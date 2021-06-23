@@ -5,11 +5,16 @@ use crate::object::CompiledFunctionObject;
 pub struct Frame {
     function: CompiledFunctionObject,
     ip: usize,
+    base_pointer: usize,
 }
 
 impl Frame {
-    pub fn new(function: CompiledFunctionObject) -> Self {
-        Frame { function, ip: 0 }
+    pub fn new(function: CompiledFunctionObject, base_pointer: usize) -> Self {
+        Frame {
+            function,
+            ip: 0,
+            base_pointer,
+        }
     }
     pub fn instructions(&self) -> &Instructions {
         self.function.instructions()
@@ -22,5 +27,8 @@ impl Frame {
     }
     pub fn update_ip(&mut self, ip: usize) {
         self.ip = ip;
+    }
+    pub fn base_pointer(&self) -> usize {
+        self.base_pointer
     }
 }

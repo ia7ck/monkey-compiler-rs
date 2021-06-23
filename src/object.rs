@@ -111,16 +111,23 @@ impl Display for Object {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledFunctionObject {
     pub(crate) instructions: Instructions,
+    num_locals: usize,
 }
 
 impl CompiledFunctionObject {
-    pub fn new(instructions: Instructions) -> Self {
-        Self { instructions }
+    pub fn new(instructions: Instructions, num_locals: usize) -> Self {
+        Self {
+            instructions,
+            num_locals,
+        }
     }
     pub fn instructions(&self) -> &Instructions {
         &self.instructions
     }
     pub fn instructions_mut(&mut self) -> &mut Instructions {
         &mut self.instructions
+    }
+    pub fn num_locals(&self) -> usize {
+        self.num_locals
     }
 }

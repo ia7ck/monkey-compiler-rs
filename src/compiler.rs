@@ -2,8 +2,9 @@ use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
 use crate::code::{make, Instructions, Opcode, DEFINITIONS};
 use crate::object;
 use crate::object::Object;
-use crate::symbol_table::SymbolTable;
+use crate::symbol_table::{SymbolScope, SymbolTable};
 use anyhow::{bail, Result};
+use std::borrow::Borrow;
 
 pub struct Compiler {
     constants: Vec<Object>,
@@ -57,7 +58,14 @@ impl Compiler {
             LetStatement { name, value } => {
                 self.compile_expression(value)?;
                 let symbol = self.symbol_table.define(&name);
-                self.emit(Opcode::OpSetGlobal, &[symbol.index()]);
+                match symbol.scope() {
+                    SymbolScope::GlobalScope => {
+                        self.emit(Opcode::OpSetGlobal, &[symbol.index()]);
+                    }
+                    SymbolScope::LocalScope => {
+                        self.emit(Opcode::OpSetLocal, &[symbol.index()]);
+                    }
+                }
             }
             ReturnStatement(return_value) => {
                 self.compile_expression(return_value)?;
@@ -176,9 +184,16 @@ impl Compiler {
                 self.change_operand(jump_pos, after_alternative_pos);
             }
             Identifier(name) => {
-                if let Some(symbol) = self.symbol_table.resolve(&name) {
+                if let Some(symbol) = self.symbol_table.borrow().resolve(&name) {
                     let index = symbol.index();
-                    self.emit(Opcode::OpGetGlobal, &[index]);
+                    match symbol.scope() {
+                        SymbolScope::GlobalScope => {
+                            self.emit(Opcode::OpGetGlobal, &[index]);
+                        }
+                        SymbolScope::LocalScope => {
+                            self.emit(Opcode::OpGetLocal, &[index]);
+                        }
+                    }
                 } else {
                     bail!("undefined variable {}", name);
                 }
@@ -208,8 +223,18 @@ impl Compiler {
                 self.compile_expression(*index)?;
                 self.emit(OpIndex, &[]);
             }
-            FunctionLiteral { body, .. } => {
+            FunctionLiteral { parameters, body } => {
                 self.enter_scope();
+
+                for param in parameters {
+                    match param {
+                        Identifier(ident) => {
+                            self.symbol_table.define(&ident);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
                 self.compile_statement(*body)?;
 
                 if self.last_instruction_is(OpPop) {
@@ -219,14 +244,26 @@ impl Compiler {
                     self.emit(OpReturn, &[]);
                 }
 
+                let num_locals = self.symbol_table.num_definitions();
                 let instructions = self.leave_scope();
-                let compiled_function =
-                    CompiledFunctionObject(object::CompiledFunctionObject::new(instructions));
+                let compiled_function = CompiledFunctionObject(
+                    object::CompiledFunctionObject::new(instructions, num_locals),
+                );
                 let operands = &[self.add_constant(compiled_function)];
                 self.emit(OpConstant, operands);
             }
-            CallExpression { function, .. } => {
+            CallExpression {
+                function,
+                arguments,
+            } => {
                 self.compile_expression(*function)?;
+
+                let _number_of_arguments = arguments.len();
+
+                for arg in arguments {
+                    self.compile_expression(arg)?;
+                }
+
                 self.emit(OpCall, &[]);
             }
         }
@@ -297,10 +334,14 @@ impl Compiler {
         };
         self.scopes.push(scope);
         self.scope_index += 1;
+        let outer = Box::new(self.symbol_table.clone());
+        self.symbol_table = SymbolTable::new_enclosed_symbol_table(outer);
     }
     fn leave_scope(&mut self) -> Instructions {
         let scope = self.scopes.pop();
         self.scope_index -= 1;
+        let outer = self.symbol_table.outer().unwrap().clone();
+        self.symbol_table = outer;
         scope.unwrap().instructions
     }
     fn replace_last_pop_with_return(&mut self) {
@@ -805,6 +846,44 @@ mod tests {
         run_compiler_tests(tests);
     }
 
+    #[test]
+    fn test_let_statement_scopes() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "let num = 42; fn() { num; }",
+                expected_constants: vec![
+                    Integer(42),
+                    Function(vec![make(OpGetGlobal, &[0]), make(OpReturnValue, &[])]),
+                ],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpConstant, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "fn() { let num = 42; num; }",
+                expected_constants: vec![
+                    Integer(42),
+                    Function(vec![
+                        make(OpConstant, &[0]), // 42
+                        make(OpSetLocal, &[0]),
+                        make(OpGetLocal, &[0]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                ],
+                expected_instructions: vec![
+                    make(OpConstant, &[1]), // fn() { ... }
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
     fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for tt in tests {
             let lexer = Lexer::new(tt.input);
@@ -880,6 +959,7 @@ mod tests {
                     Constant::Function(ins1),
                     Object::CompiledFunctionObject(object::CompiledFunctionObject {
                         instructions: ins2,
+                        ..
                     }),
                 ) => {
                     test_instructions(ins1, ins2);

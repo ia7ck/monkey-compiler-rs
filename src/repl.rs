@@ -47,13 +47,8 @@ pub fn start() {
                 let mut machine = VM::new_with_global_store(bytecode, &globals);
                 let result = machine
                     .run()
-                    .map_err(|err| format!("executing bytecode failed:\n {:?}", err))
-                    .and_then(|()| {
-                        machine
-                            .last_popped_stack_elem()
-                            .ok_or_else(|| "there is no last popped stack element".to_string())
-                            .map(|elem| elem)
-                    });
+                    .and_then(|()| Ok(machine.last_popped_stack_elem()))
+                    .map_err(|err| format!("executing bytecode failed:\n {:?}", err));
                 globals = machine.globals();
                 result
             });
