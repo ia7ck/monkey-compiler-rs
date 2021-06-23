@@ -18,7 +18,7 @@ impl HashPair {
         Self { key, value }
     }
     pub fn value(&self) -> Rc<Object> {
-        self.value.clone()
+        Rc::clone(&self.value)
     }
 }
 

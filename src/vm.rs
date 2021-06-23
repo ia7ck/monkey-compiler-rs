@@ -359,7 +359,7 @@ impl VM {
         }
         match elements.get(index as usize) {
             None => self.push(Rc::new(NULL)),
-            Some(e) => self.push(e.clone()),
+            Some(e) => self.push(Rc::clone(e)),
         }
     }
     fn execute_hash_index(
