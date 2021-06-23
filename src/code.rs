@@ -160,7 +160,7 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpArray, vec![2]),
         Definition::new(OpHash, vec![2]),
         Definition::new(OpIndex, vec![]),
-        Definition::new(OpCall, vec![]),
+        Definition::new(OpCall, vec![1]),
         Definition::new(OpReturnValue, vec![]),
         Definition::new(OpReturn, vec![]),
         Definition::new(OpGetLocal, vec![1]),

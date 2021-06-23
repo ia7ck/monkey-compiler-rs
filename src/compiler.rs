@@ -227,6 +227,8 @@ impl Compiler {
             FunctionLiteral { parameters, body } => {
                 self.enter_scope();
 
+                let num_parameters = parameters.len();
+
                 for param in parameters {
                     match param {
                         Identifier(ident) => {
@@ -248,7 +250,7 @@ impl Compiler {
                 let num_locals = self.symbol_table.num_definitions();
                 let instructions = self.leave_scope();
                 let compiled_function = CompiledFunctionObject(Rc::new(
-                    object::CompiledFunctionObject::new(instructions, num_locals),
+                    object::CompiledFunctionObject::new(instructions, num_locals, num_parameters),
                 ));
                 let operands = &[self.add_constant(compiled_function)];
                 self.emit(OpConstant, operands);
@@ -259,13 +261,13 @@ impl Compiler {
             } => {
                 self.compile_expression(*function)?;
 
-                let _number_of_arguments = arguments.len();
+                let number_of_arguments = arguments.len();
 
                 for arg in arguments {
                     self.compile_expression(arg)?;
                 }
 
-                self.emit(OpCall, &[]);
+                self.emit(OpCall, &[number_of_arguments]);
             }
         }
         Ok(())
@@ -824,7 +826,7 @@ mod tests {
                 ],
                 expected_instructions: vec![
                     make(OpConstant, &[1]),
-                    make(OpCall, &[]),
+                    make(OpCall, &[0]),
                     make(OpPop, &[]),
                 ],
             },
@@ -836,9 +838,50 @@ mod tests {
                 ],
                 expected_instructions: vec![
                     make(OpConstant, &[1]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpGetGlobal, &[0]),
+                    make(OpCall, &[0]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "let oneArg = fn(a) { a }; oneArg(42);",
+                expected_constants: vec![
+                    Function(vec![make(OpGetLocal, &[0]), make(OpReturnValue, &[])]),
+                    Integer(42),
+                ],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
                     make(OpSetGlobal, &[]),
                     make(OpGetGlobal, &[]),
-                    make(OpCall, &[]),
+                    make(OpConstant, &[1]),
+                    make(OpCall, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "let manyArg = fn(a, b, c) { a; b; c }; manyArg(11, 22, 33);",
+                expected_constants: vec![
+                    Function(vec![
+                        make(OpGetLocal, &[0]),
+                        make(OpPop, &[]),
+                        make(OpGetLocal, &[1]),
+                        make(OpPop, &[]),
+                        make(OpGetLocal, &[2]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Integer(11),
+                    Integer(22),
+                    Integer(33),
+                ],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]),
+                    make(OpSetGlobal, &[]),
+                    make(OpGetGlobal, &[]),
+                    make(OpConstant, &[1]),
+                    make(OpConstant, &[2]),
+                    make(OpConstant, &[3]),
+                    make(OpCall, &[3]), // a, b, c
                     make(OpPop, &[]),
                 ],
             },

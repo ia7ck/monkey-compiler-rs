@@ -112,13 +112,15 @@ impl Display for Object {
 pub struct CompiledFunctionObject {
     instructions: Instructions,
     num_locals: usize,
+    num_parameters: usize,
 }
 
 impl CompiledFunctionObject {
-    pub fn new(instructions: Instructions, num_locals: usize) -> Self {
+    pub fn new(instructions: Instructions, num_locals: usize, num_parameters: usize) -> Self {
         Self {
             instructions,
             num_locals,
+            num_parameters,
         }
     }
     pub fn instructions(&self) -> &Instructions {
@@ -126,5 +128,8 @@ impl CompiledFunctionObject {
     }
     pub fn num_locals(&self) -> usize {
         self.num_locals
+    }
+    pub fn num_parameters(&self) -> usize {
+        self.num_parameters
     }
 }

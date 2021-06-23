@@ -3,7 +3,7 @@ use crate::compiler::Bytecode;
 use crate::frame::Frame;
 use crate::object;
 use crate::object::{HashPair, Object};
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -34,12 +34,16 @@ impl VM {
         let constants = bytecode.constants.into_iter().map(Rc::new).collect();
         let mut frames = vec![
             Frame::new(
-                Rc::new(object::CompiledFunctionObject::new(Instructions::new(), 0)),
+                Rc::new(object::CompiledFunctionObject::new(
+                    Instructions::new(),
+                    0,
+                    0
+                )),
                 0
             );
             MAX_FRAME
         ];
-        let main_function = object::CompiledFunctionObject::new(bytecode.instructions, 0);
+        let main_function = object::CompiledFunctionObject::new(bytecode.instructions, 0, 0);
         frames[0] = Frame::new(Rc::new(main_function), 0);
         Self {
             constants,
@@ -174,9 +178,17 @@ impl VM {
                     ip += 1;
                 }
                 OpCall => {
-                    match Rc::clone(&self.stack[self.sp - 1]).deref() {
+                    let num_arguments = read_uint8(instructions.rest(ip + 1)) as usize;
+                    self.current_frame_mut().update_ip(ip + 1);
+                    match Rc::clone(&self.stack[self.sp - num_arguments - 1]).deref() {
                         Object::CompiledFunctionObject(func) => {
-                            let frame = Frame::new(Rc::clone(func), self.sp);
+                            ensure!(
+                                func.num_parameters() == num_arguments,
+                                "wrong number of arguments: want={}, got={}",
+                                func.num_parameters(),
+                                num_arguments
+                            );
+                            let frame = Frame::new(Rc::clone(func), self.sp - num_arguments);
                             self.sp = frame.base_pointer() + func.num_locals();
                             self.push_frame(frame);
                         }
@@ -754,20 +766,97 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_calling_functions_with_arguments_and_bindings() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let identity = fn(a) { a; };
+                identity(42);
+                "#,
+                int!(42),
+            ),
+            (
+                r#"
+                let sum = fn(a, b) { a + b; };
+                sum(1, 2);
+                "#,
+                int!(3),
+            ),
+            (
+                r#"
+                let sum = fn(a, b) {
+                    let c = a + b;
+                    c;
+                };
+                sum(1, 2) + sum(3, 4);
+                "#,
+                int!(10),
+            ),
+            (
+                r#"
+                let globalNum = 10;
+
+                let sum = fn(a, b) {
+                    let c = a + b;
+                    c + globalNum;
+                };
+
+                let outer = fn() {
+                    sum(1, 2) + sum(3, 4) + globalNum;
+                };
+
+                outer() + globalNum;
+                "#,
+                int!(50),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_calling_functions_with_wrong_arguments() {
+        let tests = vec![
+            (
+                "fn() { 1; }(1);",
+                "wrong number of arguments: want=0, got=1",
+            ),
+            (
+                "fn(a) { a; }();",
+                "wrong number of arguments: want=1, got=0",
+            ),
+            (
+                "fn(a, b) { a + b; }(1);",
+                "wrong number of arguments: want=2, got=1",
+            ),
+        ];
+        for (input, expected) in tests {
+            let actual = execute(input).unwrap_err();
+            assert_eq!(expected, format!("{}", actual));
+        }
+    }
+
+    fn execute(input: &str) -> Result<Rc<Object>> {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse().unwrap();
+        let mut compiler = Compiler::new();
+        compiler.compile(program).unwrap();
+        let bytecode = compiler.bytecode();
+        let mut vm = VM::new(bytecode);
+        vm.run()?;
+        Ok(vm.last_popped_stack_elem())
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
-            let mut compiler = Compiler::new();
-            compiler
-                .compile(program)
-                .unwrap_or_else(|err| panic!("compiler error: {:?}", err));
-            let bytecode = compiler.bytecode();
-            let mut vm = VM::new(bytecode);
-            vm.run().unwrap_or_else(|err| panic!("vm error: {:?}", err));
-            let stack_elem = vm.last_popped_stack_elem();
-            test_expected_object(&expected, &stack_elem);
+            let actual = execute(input).unwrap_or_else(|err| panic!("{}\ninput:\n{}", err, input));
+            test_expected_object(&expected, &actual);
         }
     }
 
