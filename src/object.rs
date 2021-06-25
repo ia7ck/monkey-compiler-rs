@@ -140,7 +140,7 @@ impl CompiledFunctionObject {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Builtin {
     Len,
     Puts,
@@ -149,6 +149,11 @@ pub enum Builtin {
     Rest,
     Push,
 }
+
+pub static BUILTINS: Lazy<Vec<Builtin>> = Lazy::new(|| {
+    use Builtin::*;
+    vec![Len, Puts, First, Last, Rest, Push]
+});
 
 impl Builtin {
     pub fn name(&self) -> &'static str {
@@ -261,8 +266,3 @@ impl Builtin {
         }
     }
 }
-
-pub static BUILTINS: Lazy<Vec<Builtin>> = Lazy::new(|| {
-    use Builtin::*;
-    vec![Len, Puts, First, Last, Rest, Push]
-});
