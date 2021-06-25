@@ -6,7 +6,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::iter::FromIterator;
 use std::ops::{Index, IndexMut};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Instructions(Vec<u8>);
 impl Instructions {
     pub fn new() -> Self {
@@ -112,6 +112,11 @@ pub enum Opcode {
     OpArray,
     OpHash,
     OpIndex,
+    OpCall,
+    OpReturnValue,
+    OpReturn,
+    OpGetLocal,
+    OpSetLocal,
 }
 
 pub struct Definition {
@@ -155,6 +160,11 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpArray, vec![2]),
         Definition::new(OpHash, vec![2]),
         Definition::new(OpIndex, vec![]),
+        Definition::new(OpCall, vec![1]),
+        Definition::new(OpReturnValue, vec![]),
+        Definition::new(OpReturn, vec![]),
+        Definition::new(OpGetLocal, vec![1]),
+        Definition::new(OpSetLocal, vec![1]),
     ]
 });
 
@@ -181,6 +191,9 @@ pub fn make(op: Opcode, operands: &[usize]) -> Instructions {
             2 => {
                 BigEndian::write_u16(&mut instruction[offset..], operand as u16);
             }
+            1 => {
+                instruction[offset] = operand as u8;
+            }
             _ => unreachable!(),
         }
         offset += width;
@@ -196,6 +209,9 @@ fn read_operands(def: &Definition, instructions: &[u8]) -> (Vec<usize>, usize) {
             2 => {
                 operands[i] = read_uint16(&instructions[offset..]) as usize;
             }
+            1 => {
+                operands[i] = read_uint8(&instructions[offset..]) as usize;
+            }
             _ => unreachable!(),
         }
         offset += width;
@@ -205,6 +221,10 @@ fn read_operands(def: &Definition, instructions: &[u8]) -> (Vec<usize>, usize) {
 
 pub fn read_uint16(instructions: &[u8]) -> u16 {
     BigEndian::read_u16(instructions)
+}
+
+pub fn read_uint8(instructions: &[u8]) -> u8 {
+    instructions[0]
 }
 
 #[cfg(test)]
@@ -229,6 +249,11 @@ mod tests {
                 op: OpAdd,
                 operands: vec![],
                 expected: vec![OpAdd as u8],
+            },
+            TestCase {
+                op: OpGetLocal,
+                operands: vec![255],
+                expected: vec![OpGetLocal as u8, 255],
             },
         ];
         for tt in tests {
@@ -259,13 +284,15 @@ mod tests {
     fn test_instructions_string() {
         let instructions = vec![
             make(OpAdd, &[]),
+            make(OpGetLocal, &[1]),
             make(OpConstant, &[2]),
             make(OpConstant, &[65535]),
         ];
         let instructions: Instructions = instructions.into_iter().flatten().collect();
         let expected = r#"0000 OpAdd
-0001 OpConstant 2
-0004 OpConstant 65535
+0001 OpGetLocal 1
+0003 OpConstant 2
+0006 OpConstant 65535
 "#;
         let actual = format!("{}", instructions);
         assert_eq!(expected, actual);
@@ -278,11 +305,18 @@ mod tests {
             operands: Vec<usize>,
             bytes_read: usize,
         }
-        let tests = vec![TestCase {
-            op: OpConstant,
-            operands: vec![65535],
-            bytes_read: 2,
-        }];
+        let tests = vec![
+            TestCase {
+                op: OpConstant,
+                operands: vec![65535],
+                bytes_read: 2,
+            },
+            TestCase {
+                op: OpGetLocal,
+                operands: vec![255],
+                bytes_read: 1,
+            },
+        ];
         for tt in tests {
             let instruction = make(tt.op, &tt.operands);
             let def =

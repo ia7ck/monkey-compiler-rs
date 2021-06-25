@@ -1,3 +1,4 @@
+use crate::code::Instructions;
 use anyhow::{bail, Result};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ impl HashPair {
         Self { key, value }
     }
     pub fn value(&self) -> Rc<Object> {
-        self.value.clone()
+        Rc::clone(&self.value)
     }
 }
 
@@ -28,6 +29,7 @@ pub enum Object {
     Boolean(bool),
     ArrayObject(Vec<Rc<Object>>),
     HashObject(HashMap<u64, Rc<HashPair>>),
+    CompiledFunctionObject(Rc<CompiledFunctionObject>),
     Null,
     Dummy,
 }
@@ -63,6 +65,7 @@ impl Object {
             Boolean(..) => "BOOLEAN",
             ArrayObject(..) => "ARRAY",
             HashObject(..) => "HASH",
+            CompiledFunctionObject(..) => "COMPILED_FUNCTION",
             Null => "NULL",
             Dummy => unreachable!(),
         }
@@ -73,15 +76,9 @@ impl Display for Object {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use Object::*;
         match self {
-            Integer(i) => {
-                write!(f, "{}", i)
-            }
-            MonkeyString(s) => {
-                write!(f, "\"{}\"", s)
-            }
-            Boolean(b) => {
-                write!(f, "{}", b)
-            }
+            Integer(i) => write!(f, "{}", i),
+            MonkeyString(s) => write!(f, "\"{}\"", s),
+            Boolean(b) => write!(f, "{}", b),
             ArrayObject(elements) => {
                 write!(f, "[")?;
                 let mut elements = elements.iter();
@@ -104,12 +101,35 @@ impl Display for Object {
                 }
                 write!(f, "}}")
             }
-            Null => {
-                write!(f, "NULL")
-            }
-            Dummy => {
-                unreachable!()
-            }
+            CompiledFunctionObject(..) => write!(f, "CompiledFunction[{:p}]", self),
+            Null => write!(f, "NULL"),
+            Dummy => unreachable!(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledFunctionObject {
+    instructions: Instructions,
+    num_locals: usize,
+    num_parameters: usize,
+}
+
+impl CompiledFunctionObject {
+    pub fn new(instructions: Instructions, num_locals: usize, num_parameters: usize) -> Self {
+        Self {
+            instructions,
+            num_locals,
+            num_parameters,
+        }
+    }
+    pub fn instructions(&self) -> &Instructions {
+        &self.instructions
+    }
+    pub fn num_locals(&self) -> usize {
+        self.num_locals
+    }
+    pub fn num_parameters(&self) -> usize {
+        self.num_parameters
     }
 }

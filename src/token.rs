@@ -31,21 +31,25 @@ pub enum Token {
     LBRACKET, // [
     RBRACKET, // ]
 
+    FUNCTION,
     LET,
     TRUE,
     FALSE,
     IF,
     ELSE,
+    RETURN,
 }
 
 pub fn lookup_identifier(ident: &str) -> Token {
     use Token::*;
     match ident {
+        "fn" => FUNCTION,
         "let" => LET,
         "true" => TRUE,
         "false" => FALSE,
         "if" => IF,
         "else" => ELSE,
+        "return" => RETURN,
         _ => IDENT(ident.to_string()),
     }
 }

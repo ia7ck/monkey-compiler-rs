@@ -4,7 +4,7 @@ use crate::lexer::Lexer;
 use crate::object::Object;
 use crate::parser::Parser;
 use crate::symbol_table::SymbolTable;
-use crate::vm::{GLOBAL_SIZE, VM};
+use crate::vm::VM;
 use anyhow::Result;
 use std::io;
 use std::io::Write;
@@ -19,7 +19,7 @@ pub fn start() {
     }
 
     let mut constants = Vec::new();
-    let mut globals = vec![Object::Dummy; GLOBAL_SIZE];
+    let mut globals = vec![Object::Dummy; 65535];
     let mut symbol_table = SymbolTable::new();
 
     loop {
@@ -47,13 +47,8 @@ pub fn start() {
                 let mut machine = VM::new_with_global_store(bytecode, &globals);
                 let result = machine
                     .run()
-                    .map_err(|err| format!("executing bytecode failed:\n {:?}", err))
-                    .and_then(|()| {
-                        machine
-                            .last_popped_stack_elem()
-                            .ok_or_else(|| "there is no last popped stack element".to_string())
-                            .map(|elem| elem)
-                    });
+                    .and_then(|()| Ok(machine.last_popped_stack_elem()))
+                    .map_err(|err| format!("executing bytecode failed:\n {:?}", err));
                 globals = machine.globals();
                 result
             });

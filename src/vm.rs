@@ -1,35 +1,57 @@
-use crate::code::{read_uint16, Instructions, Opcode, DEFINITIONS};
+use crate::code::{read_uint16, read_uint8, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
+use crate::frame::Frame;
+use crate::object;
 use crate::object::{HashPair, Object};
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
 
 const STACK_SIZE: usize = 2048;
-pub(crate) const GLOBAL_SIZE: usize = 65536;
+const GLOBAL_SIZE: usize = 65536;
+const MAX_FRAME: usize = 1024;
 
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
 const NULL: Object = Object::Null;
+const DUMMY: Object = Object::Dummy;
 
 pub struct VM {
-    instructions: Instructions,
     constants: Vec<Rc<Object>>,
+
     stack: Vec<Rc<Object>>,
-    last_popped: Option<Rc<Object>>,
+    sp: usize,
+
     globals: Vec<Rc<Object>>,
+
+    frames: Vec<Frame>,
+    frames_index: usize,
 }
 
 impl VM {
     pub fn new(bytecode: Bytecode) -> Self {
         let constants = bytecode.constants.into_iter().map(Rc::new).collect();
+        let mut frames = vec![
+            Frame::new(
+                Rc::new(object::CompiledFunctionObject::new(
+                    Instructions::new(),
+                    0,
+                    0
+                )),
+                0
+            );
+            MAX_FRAME
+        ];
+        let main_function = object::CompiledFunctionObject::new(bytecode.instructions, 0, 0);
+        frames[0] = Frame::new(Rc::new(main_function), 0);
         Self {
-            instructions: bytecode.instructions,
             constants,
-            stack: Vec::with_capacity(STACK_SIZE),
-            last_popped: None,
-            globals: vec![Rc::new(Object::Dummy); GLOBAL_SIZE],
+            stack: vec![Rc::new(DUMMY); STACK_SIZE],
+            sp: 0,
+            globals: vec![Rc::new(DUMMY); GLOBAL_SIZE],
+            frames,
+            frames_index: 1,
         }
     }
     pub fn new_with_global_store(bytecode: Bytecode, globals: &[Object]) -> Self {
@@ -37,46 +59,40 @@ impl VM {
         machine.globals = globals.iter().map(|g| Rc::new(g.clone())).collect();
         machine
     }
-    pub fn last_popped_stack_elem(&self) -> Option<Rc<Object>> {
-        match &self.last_popped {
-            Some(last) => Some(Rc::clone(last)),
-            None => None,
-        }
+    pub fn last_popped_stack_elem(&self) -> Rc<Object> {
+        Rc::clone(&self.stack[self.sp])
     }
     fn push(&mut self, obj: Rc<Object>) -> Result<()> {
-        if self.stack.len() >= STACK_SIZE {
+        if self.sp >= STACK_SIZE {
             bail!("stack overflow");
         }
-        self.stack.push(obj);
+        self.stack[self.sp] = obj;
+        self.sp += 1;
         Ok(())
     }
-    fn pop(&mut self) -> Result<Rc<Object>> {
-        match self.stack.pop() {
-            Some(obj) => {
-                self.last_popped = Some(Rc::clone(&obj));
-                Ok(obj)
-            }
-            None => {
-                bail!("stack is empty");
-            }
-        }
+    fn pop(&mut self) -> Rc<Object> {
+        let obj = Rc::clone(&self.stack[self.sp - 1]);
+        debug_assert_ne!(obj, Rc::new(DUMMY));
+        self.sp -= 1;
+        obj
     }
     pub fn run(&mut self) -> Result<()> {
         use Opcode::*;
-        let mut ip = 0;
-        while ip < self.instructions.len() {
-            let def = &DEFINITIONS[self.instructions[ip] as usize];
+        while self.current_frame().ip() < self.current_frame().instructions().len() {
+            let mut ip = self.current_frame().ip();
+            let instructions = self.current_frame().instructions();
+            let def = &DEFINITIONS[instructions[ip] as usize];
             let op = def.opcode();
             match op {
                 OpConstant => {
-                    let const_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let const_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     // opcode (1 byte) + operand (2 byte)
                     let obj = Rc::clone(&self.constants[const_index]);
                     self.push(obj)?;
                     ip += 3;
                 }
                 OpPop => {
-                    self.pop()?;
+                    self.pop();
                     ip += 1;
                 }
                 OpAdd | OpSub | OpMul | OpDiv => {
@@ -104,15 +120,15 @@ impl VM {
                     ip += 1;
                 }
                 OpJumpNotTruthy => {
-                    let pos = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let pos = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2; // opcode (1byte) + operand (2byte)
-                    let condition = self.pop()?;
+                    let condition = self.pop();
                     if !Self::is_truthy(&condition) {
                         ip = pos;
                     }
                 }
                 OpJump => {
-                    let pos = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let pos = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip = pos;
                 }
                 OpNull => {
@@ -120,55 +136,105 @@ impl VM {
                     ip += 1;
                 }
                 OpGetGlobal => {
-                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
-                    let obj = self.globals[global_index].clone();
-                    debug_assert_ne!(obj, Rc::new(Object::Dummy));
+                    let obj = Rc::clone(&self.globals[global_index]);
+                    debug_assert_ne!(obj, Rc::new(DUMMY));
                     self.push(obj)?
                 }
                 OpSetGlobal => {
-                    let global_index = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
-                    let obj = self.pop()?;
+                    let obj = self.pop();
                     self.globals[global_index] = obj;
                 }
                 OpArray => {
-                    let num_elements = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let num_elements = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
                     let mut elements = Vec::new();
                     for _ in 0..num_elements {
-                        let e = self.pop()?;
+                        let e = self.pop();
                         elements.push(e);
                     }
                     elements.reverse();
                     self.push(Rc::new(Object::ArrayObject(elements)))?;
                 }
                 OpHash => {
-                    let num_pairs = read_uint16(self.instructions.rest(ip + 1)) as usize;
+                    let num_pairs = read_uint16(instructions.rest(ip + 1)) as usize;
                     ip += 1 + 2;
                     let mut hash = HashMap::new();
                     for _ in 0..num_pairs {
-                        let value = self.pop()?;
-                        let key = self.pop()?;
+                        let value = self.pop();
+                        let key = self.pop();
                         let h = key.calculate_hash()?;
                         hash.insert(h, Rc::new(HashPair::new(key, value)));
                     }
                     self.push(Rc::new(Object::HashObject(hash)))?;
                 }
                 OpIndex => {
-                    let index = self.pop()?;
-                    let left = self.pop()?;
+                    let index = self.pop();
+                    let left = self.pop();
                     self.execute_index_expression(left, index)?;
                     ip += 1;
                 }
+                OpCall => {
+                    let num_arguments = read_uint8(instructions.rest(ip + 1)) as usize;
+                    self.current_frame_mut().update_ip(ip + 1);
+                    match Rc::clone(&self.stack[self.sp - num_arguments - 1]).deref() {
+                        Object::CompiledFunctionObject(func) => {
+                            ensure!(
+                                func.num_parameters() == num_arguments,
+                                "wrong number of arguments: want={}, got={}",
+                                func.num_parameters(),
+                                num_arguments
+                            );
+                            let frame = Frame::new(Rc::clone(func), self.sp - num_arguments);
+                            self.sp = frame.base_pointer() + func.num_locals();
+                            self.push_frame(frame);
+                        }
+                        obj => {
+                            bail!("calling non-function: {:?}", obj);
+                        }
+                    }
+                    continue;
+                }
+                OpReturnValue => {
+                    let return_value = self.pop();
+
+                    let base_pointer = self.pop_frame().base_pointer();
+                    self.sp = base_pointer - 1;
+
+                    self.push(return_value)?;
+                    ip = self.current_frame().ip() + 1;
+                }
+                OpReturn => {
+                    let base_pointer = self.pop_frame().base_pointer();
+                    self.sp = base_pointer - 1;
+
+                    self.push(Rc::new(NULL))?;
+                    ip = self.current_frame().ip() + 1;
+                }
+                OpGetLocal => {
+                    let local_index = read_uint8(instructions.rest(ip + 1)) as usize;
+                    let base_pointer = self.current_frame().base_pointer();
+                    self.push(Rc::clone(&self.stack[base_pointer + local_index]))?;
+                    ip = self.current_frame().ip() + 1 + 1;
+                }
+                OpSetLocal => {
+                    let local_index = read_uint8(instructions.rest(ip + 1)) as usize;
+                    let base_pointer = self.current_frame().base_pointer();
+                    self.stack[base_pointer + local_index] = self.pop();
+                    ip = self.current_frame().ip() + 1 + 1;
+                }
             }
+            self.current_frame_mut().update_ip(ip);
         }
         Ok(())
     }
     fn execute_binary_operation(&mut self, op: Opcode) -> Result<()> {
         use Object::*;
-        let right = self.pop()?;
-        let left = self.pop()?;
+        let right = self.pop();
+        let left = self.pop();
         match (left.deref(), right.deref()) {
             (Integer(left), Integer(right)) => {
                 self.execute_binary_integer_operation(op, *left, *right)?;
@@ -206,8 +272,8 @@ impl VM {
     fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
         use Object::*;
         use Opcode::*;
-        let right = self.pop()?;
-        let left = self.pop()?;
+        let right = self.pop();
+        let left = self.pop();
         match (op, left.deref(), right.deref()) {
             (op, Integer(left), Integer(right)) => {
                 self.execute_integer_comparison(op, *left, *right)?;
@@ -242,7 +308,7 @@ impl VM {
     }
     fn execute_minus_operator(&mut self) -> Result<()> {
         use Object::*;
-        let operand = self.pop()?;
+        let operand = self.pop();
         match *operand {
             Integer(value) => {
                 self.push(Rc::new(Integer(-value)))?;
@@ -255,7 +321,7 @@ impl VM {
     }
     fn execute_bang_operator(&mut self) -> Result<()> {
         use Object::*;
-        let operand = self.pop()?;
+        let operand = self.pop();
         match *operand {
             Boolean(value) => {
                 if value {
@@ -305,7 +371,7 @@ impl VM {
         }
         match elements.get(index as usize) {
             None => self.push(Rc::new(NULL)),
-            Some(e) => self.push(e.clone()),
+            Some(e) => self.push(Rc::clone(e)),
         }
     }
     fn execute_hash_index(
@@ -338,6 +404,20 @@ impl VM {
             .into_iter()
             .map(|g| g.deref().clone())
             .collect()
+    }
+    fn current_frame(&self) -> &Frame {
+        &self.frames[self.frames_index - 1]
+    }
+    fn current_frame_mut(&mut self) -> &mut Frame {
+        &mut self.frames[self.frames_index - 1]
+    }
+    fn push_frame(&mut self, frame: Frame) {
+        self.frames[self.frames_index] = frame;
+        self.frames_index += 1;
+    }
+    fn pop_frame(&mut self) -> &Frame {
+        self.frames_index -= 1;
+        &self.frames[self.frames_index]
     }
 }
 
@@ -537,22 +617,246 @@ mod tests {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn test_calling_functions_without_arguments() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let fivePlusTen = fn() { 10 + 5 };
+                fivePlusTen();
+                "#,
+                int!(15),
+            ),
+            (
+                r#"
+                let one = fn() { 1; };
+                let two = fn() { 2; };
+                one() + two()
+                "#,
+                int!(3),
+            ),
+            (
+                r#"
+                let a = fn() { 1 };
+                let b = fn() { a() + 1 };
+                let c = fn() { b() + 1 };
+                c();
+                "#,
+                int!(3),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_functions_with_return_statement() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let earlyExit = fn() { return 99; 100; };
+                earlyExit();
+                "#,
+                int!(99),
+            ),
+            (
+                r#"
+                let earlyExit = fn() { return 99; return 100; };
+                earlyExit();
+                "#,
+                int!(99),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_functions_without_return_value() {
+        let tests = vec![
+            (
+                r#"
+                let noReturn = fn() { };
+                noReturn();
+                "#,
+                NULL,
+            ),
+            (
+                r#"
+                let noReturn = fn() { };
+                let noReturnTwo = fn() { noReturn(); };
+                noReturn();
+                noReturnTwo();
+                "#,
+                NULL,
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_first_class_functions() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let returnsOne = fn() { 1; };
+                let returnsOneReturner = fn() { returnsOne; };
+                returnsOneReturner()();
+                "#,
+                int!(1),
+            ),
+            (
+                r#"
+                let returnsOneReturner = fn() {
+                    let returnsOne = fn() { 1; };
+                    returnsOne;
+                };
+                returnsOneReturner()();
+                "#,
+                int!(1),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_calling_functions_with_bindings() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let one = fn() { let one = 1; one };
+                one();
+                "#,
+                int!(1),
+            ),
+            (
+                r#"
+                let oneAndTwo = fn() { let one = 1; let two = 2; one + two; };
+                oneAndTwo();
+                "#,
+                int!(3),
+            ),
+            (
+                r#"
+                let globalSeed = 50;
+                let minusOne = fn() { let num = 1; globalSeed - num };
+                minusOne();
+                "#,
+                int!(49),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_calling_functions_with_arguments_and_bindings() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let identity = fn(a) { a; };
+                identity(42);
+                "#,
+                int!(42),
+            ),
+            (
+                r#"
+                let sum = fn(a, b) { a + b; };
+                sum(1, 2);
+                "#,
+                int!(3),
+            ),
+            (
+                r#"
+                let sum = fn(a, b) {
+                    let c = a + b;
+                    c;
+                };
+                sum(1, 2) + sum(3, 4);
+                "#,
+                int!(10),
+            ),
+            (
+                r#"
+                let globalNum = 10;
+
+                let sum = fn(a, b) {
+                    let c = a + b;
+                    c + globalNum;
+                };
+
+                let outer = fn() {
+                    sum(1, 2) + sum(3, 4) + globalNum;
+                };
+
+                outer() + globalNum;
+                "#,
+                int!(50),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_calling_functions_with_wrong_arguments() {
+        let tests = vec![
+            (
+                "fn() { 1; }(1);",
+                "wrong number of arguments: want=0, got=1",
+            ),
+            (
+                "fn(a) { a; }();",
+                "wrong number of arguments: want=1, got=0",
+            ),
+            (
+                "fn(a, b) { a + b; }(1);",
+                "wrong number of arguments: want=2, got=1",
+            ),
+        ];
+        for (input, expected) in tests {
+            let actual = execute(input).unwrap_err();
+            assert_eq!(expected, format!("{}", actual));
+        }
+    }
+
+    fn execute(input: &str) -> Result<Rc<Object>> {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse().unwrap();
+        let mut compiler = Compiler::new();
+        compiler.compile(program).unwrap();
+        let bytecode = compiler.bytecode();
+        let mut vm = VM::new(bytecode);
+        vm.run()?;
+        Ok(vm.last_popped_stack_elem())
+    }
+
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
-            let mut compiler = Compiler::new();
-            compiler
-                .compile(program)
-                .unwrap_or_else(|err| panic!("compiler error: {:?}", err));
-            let bytecode = compiler.bytecode();
-            let mut vm = VM::new(bytecode);
-            vm.run().unwrap_or_else(|err| panic!("vm error: {:?}", err));
-            let stack_elem = vm
-                .last_popped_stack_elem()
-                .unwrap_or_else(|| panic!("there is no last popped stack element"));
-            test_expected_object(&expected, &stack_elem);
+            let actual = execute(input).unwrap_or_else(|err| panic!("{}\ninput:\n{}", err, input));
+            test_expected_object(&expected, &actual);
         }
     }
 
@@ -579,6 +883,7 @@ mod tests {
                 test_hash_object(hash, actual)
                     .unwrap_or_else(|err| panic!("test_hash_object failed: {:?}", err));
             }
+            CompiledFunctionObject(..) => unimplemented!(),
             Null => {
                 assert_eq!(&NULL, actual);
             }
