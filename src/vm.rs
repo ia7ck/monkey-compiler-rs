@@ -2,7 +2,7 @@ use crate::code::{read_uint16, read_uint8, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::frame::Frame;
 use crate::object;
-use crate::object::{HashPair, Object};
+use crate::object::Object;
 use anyhow::{bail, ensure, Result};
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -167,7 +167,7 @@ impl VM {
                         let value = self.pop();
                         let key = self.pop();
                         let h = key.calculate_hash()?;
-                        hash.insert(h, Rc::new(HashPair::new(key, value)));
+                        hash.insert(h, Rc::new(object::HashPair::new(key, value)));
                     }
                     self.push(Rc::new(Object::HashObject(hash)))?;
                 }
@@ -395,7 +395,7 @@ impl VM {
     }
     fn execute_hash_index(
         &mut self,
-        hash: &HashMap<u64, Rc<HashPair>>,
+        hash: &HashMap<u64, Rc<object::HashPair>>,
         index: &Object,
     ) -> Result<()> {
         let key = index.calculate_hash()?;
