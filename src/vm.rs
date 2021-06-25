@@ -179,7 +179,6 @@ impl VM {
                 }
                 OpCall => {
                     let num_arguments = read_uint8(instructions.rest(ip + 1)) as usize;
-                    self.current_frame_mut().update_ip(ip + 1);
                     match Rc::clone(&self.stack[self.sp - num_arguments - 1]).deref() {
                         Object::CompiledFunctionObject(func) => {
                             ensure!(
@@ -188,9 +187,23 @@ impl VM {
                                 func.num_parameters(),
                                 num_arguments
                             );
+                            self.current_frame_mut().update_ip(ip + 1);
                             let frame = Frame::new(Rc::clone(func), self.sp - num_arguments);
                             self.sp = frame.base_pointer() + func.num_locals();
                             self.push_frame(frame);
+                        }
+                        Object::BuiltinFunction(func) => {
+                            self.current_frame_mut().update_ip(ip + 2);
+                            let arguments = &self.stack[self.sp - num_arguments..self.sp];
+                            let result = func.call(arguments)?;
+                            match result {
+                                Some(obj) => {
+                                    self.push(obj)?;
+                                }
+                                None => {
+                                    self.push(Rc::new(NULL))?;
+                                }
+                            }
                         }
                         obj => {
                             bail!("calling non-function: {:?}", obj);
@@ -225,6 +238,12 @@ impl VM {
                     let base_pointer = self.current_frame().base_pointer();
                     self.stack[base_pointer + local_index] = self.pop();
                     ip = self.current_frame().ip() + 1 + 1;
+                }
+                OpGetBuiltin => {
+                    let builtin_index = read_uint8(instructions.rest(ip + 1)) as usize;
+                    let builtin = object::BUILTINS[builtin_index].clone();
+                    self.push(Rc::new(Object::BuiltinFunction(builtin)))?;
+                    ip += 1 + 1;
                 }
             }
             self.current_frame_mut().update_ip(ip);
@@ -841,6 +860,63 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_builtin_functions() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (r#"len("");"#, int!(0)),
+            (r#"len("four");"#, int!(4)),
+            ("len([]);", int!(0)),
+            ("len([1, 2, 3]);", int!(3)),
+            (r#"puts("hello world");"#, Object::Null),
+            ("first([1, 2, 3]);", int!(1)),
+            ("first([]);", Object::Null),
+            ("last([1, 2, 3]);", int!(3)),
+            ("last([]);", Object::Null),
+            (
+                "rest([1, 2, 3]);",
+                Object::ArrayObject(vec![Rc::new(int!(2)), Rc::new(int!(3))]),
+            ),
+            ("rest([]);", Object::Null),
+            (
+                "push([1, 2], 3);",
+                Object::ArrayObject(vec![Rc::new(int!(1)), Rc::new(int!(2)), Rc::new(int!(3))]),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_builtin_functions_with_wrong_arguments() {
+        let tests = vec![
+            ("len(42);", "argument to `len` not supported, got INTEGER"),
+            (
+                r#"len("one", "two");"#,
+                "wrong number of arguments. got=2, want=1",
+            ),
+            (
+                "first(42);",
+                "argument to `first` must be ARRAY, got INTEGER",
+            ),
+            (
+                r#"last("777");"#,
+                "argument to `last` must be ARRAY, got STRING",
+            ),
+            (
+                "push(12, 3);",
+                "argument to `push` must be ARRAY, got INTEGER",
+            ),
+        ];
+        for (input, expected) in tests {
+            let actual = execute(input).unwrap_err();
+            assert_eq!(expected, format!("{}", actual));
+        }
+    }
+
     fn execute(input: &str) -> Result<Rc<Object>> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
@@ -884,6 +960,7 @@ mod tests {
                     .unwrap_or_else(|err| panic!("test_hash_object failed: {:?}", err));
             }
             CompiledFunctionObject(..) => unimplemented!(),
+            BuiltinFunction(..) => unimplemented!(),
             Null => {
                 assert_eq!(&NULL, actual);
             }

@@ -1,9 +1,11 @@
+use crate::object::BUILTINS;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum SymbolScope {
     GlobalScope,
     LocalScope,
+    BuiltinScope,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -58,6 +60,20 @@ impl SymbolTable {
         self.store.insert(name.to_string(), symbol.clone());
         self.num_definitions += 1;
         symbol
+    }
+    pub fn define_builtin(&mut self, index: usize, name: &str) -> Symbol {
+        let symbol = Symbol {
+            name: name.to_string(),
+            scope: SymbolScope::BuiltinScope,
+            index,
+        };
+        self.store.insert(name.to_string(), symbol.clone());
+        symbol
+    }
+    pub fn define_builtins(&mut self) {
+        for (i, builtin) in BUILTINS.iter().enumerate() {
+            self.define_builtin(i, builtin.name());
+        }
     }
     pub fn resolve(&self, name: &str) -> Option<&Symbol> {
         if let Some(symbol) = self.store.get(name) {
@@ -276,6 +292,51 @@ mod tests {
         for (name, symbol) in second_tests {
             let res = second_local.resolve(name).unwrap();
             assert_eq!(res, &symbol);
+        }
+    }
+
+    #[test]
+    fn test_define_resolve_builtins() {
+        let global = SymbolTable::new();
+        let mut global = Box::new(global);
+
+        let expected_symbols = vec![
+            Symbol {
+                name: "a".to_string(),
+                scope: SymbolScope::BuiltinScope,
+                index: 0,
+            },
+            Symbol {
+                name: "b".to_string(),
+                scope: SymbolScope::BuiltinScope,
+                index: 1,
+            },
+            Symbol {
+                name: "c".to_string(),
+                scope: SymbolScope::BuiltinScope,
+                index: 2,
+            },
+            Symbol {
+                name: "d".to_string(),
+                scope: SymbolScope::BuiltinScope,
+                index: 3,
+            },
+        ];
+
+        for (i, sym) in expected_symbols.iter().enumerate() {
+            global.define_builtin(i, &sym.name);
+        }
+
+        let first_local = SymbolTable::new_enclosed_symbol_table(global.clone());
+        let first_local = Box::new(first_local);
+        let second_local = SymbolTable::new_enclosed_symbol_table(first_local.clone());
+        let second_local = Box::new(second_local);
+
+        for table in &[global, first_local, second_local] {
+            for sym in expected_symbols.iter().clone() {
+                let actual = table.resolve(&sym.name);
+                assert_eq!(Some(sym), actual);
+            }
         }
     }
 }
