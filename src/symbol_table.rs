@@ -1,7 +1,8 @@
 use crate::object::BUILTINS;
 use std::collections::HashMap;
+use std::rc::Rc;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum SymbolScope {
     GlobalScope,
     LocalScope,
@@ -19,8 +20,8 @@ impl Symbol {
     pub fn index(&self) -> usize {
         self.index
     }
-    pub fn scope(&self) -> &SymbolScope {
-        &self.scope
+    pub fn scope(&self) -> SymbolScope {
+        self.scope
     }
 }
 
@@ -28,7 +29,7 @@ impl Symbol {
 pub struct SymbolTable {
     outer: Option<Box<SymbolTable>>,
 
-    store: HashMap<String, Symbol>,
+    store: HashMap<String, Rc<Symbol>>,
     num_definitions: usize,
 }
 
@@ -47,27 +48,27 @@ impl SymbolTable {
             num_definitions: 0,
         }
     }
-    pub fn define(&mut self, name: &str) -> Symbol {
+    pub fn define(&mut self, name: &str) -> Rc<Symbol> {
         let scope = match self.outer {
             Some(_) => SymbolScope::LocalScope,
             None => SymbolScope::GlobalScope,
         };
-        let symbol = Symbol {
+        let symbol = Rc::new(Symbol {
             name: name.to_string(),
             scope,
             index: self.num_definitions,
-        };
-        self.store.insert(name.to_string(), symbol.clone());
+        });
+        self.store.insert(name.to_string(), Rc::clone(&symbol));
         self.num_definitions += 1;
         symbol
     }
-    pub fn define_builtin(&mut self, index: usize, name: &str) -> Symbol {
-        let symbol = Symbol {
+    pub fn define_builtin(&mut self, index: usize, name: &str) -> Rc<Symbol> {
+        let symbol = Rc::new(Symbol {
             name: name.to_string(),
             scope: SymbolScope::BuiltinScope,
             index,
-        };
-        self.store.insert(name.to_string(), symbol.clone());
+        });
+        self.store.insert(name.to_string(), Rc::clone(&symbol));
         symbol
     }
     pub fn define_builtins(&mut self) {
@@ -92,6 +93,7 @@ impl SymbolTable {
 #[cfg(test)]
 mod tests {
     use crate::symbol_table::{Symbol, SymbolScope, SymbolTable};
+    use std::rc::Rc;
 
     #[test]
     fn test_define() {
@@ -100,21 +102,21 @@ mod tests {
         let a = global.define("a");
         assert_eq!(
             a,
-            Symbol {
+            Rc::new(Symbol {
                 name: "a".to_string(),
                 scope: SymbolScope::GlobalScope,
                 index: 0
-            }
+            })
         );
 
         let b = global.define("b");
         assert_eq!(
             b,
-            Symbol {
+            Rc::new(Symbol {
                 name: "b".to_string(),
                 scope: SymbolScope::GlobalScope,
                 index: 1
-            }
+            })
         );
     }
 
