@@ -82,7 +82,7 @@ impl VM {
     pub fn run(&mut self) -> Result<()> {
         use Opcode::*;
         while self.current_frame().ip() < self.current_frame().instructions().len() {
-            let mut ip = self.current_frame().ip();
+            let ip = self.current_frame().ip();
             let instructions = self.current_frame().instructions();
             let def = &DEFINITIONS[instructions[ip] as usize];
             let op = def.opcode();
@@ -92,67 +92,68 @@ impl VM {
                     // opcode (1 byte) + operand (2 byte)
                     let obj = Rc::clone(&self.constants[const_index]);
                     self.push(obj)?;
-                    ip += 3;
+                    self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
                 OpPop => {
                     self.pop();
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpAdd | OpSub | OpMul | OpDiv => {
                     self.execute_binary_operation(op)?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpTrue => {
                     self.push(Rc::clone(&TRUE))?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpFalse => {
                     self.push(Rc::clone(&FALSE))?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpEqual | OpNotEqual | OpGreaterThan => {
                     self.execute_comparison(op)?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpMinus => {
                     self.execute_minus_operator()?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpBang => {
                     self.execute_bang_operator()?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpJumpNotTruthy => {
                     let pos = read_uint16(instructions.rest(ip + 1)) as usize;
-                    ip += 1 + 2; // opcode (1byte) + operand (2byte)
+
+                    self.current_frame_mut().update_ip(ip + 1 + 2);
+
                     let condition = self.pop();
                     if !Self::is_truthy(&condition) {
-                        ip = pos;
+                        self.current_frame_mut().update_ip(pos);
                     }
                 }
                 OpJump => {
                     let pos = read_uint16(instructions.rest(ip + 1)) as usize;
-                    ip = pos;
+                    self.current_frame_mut().update_ip(pos);
                 }
                 OpNull => {
                     self.push(Rc::clone(&NULL))?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpGetGlobal => {
                     let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
-                    ip += 1 + 2;
                     let obj = Rc::clone(&self.globals[global_index]);
-                    self.push(obj)?
+                    self.push(obj)?;
+                    self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
                 OpSetGlobal => {
                     let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
-                    ip += 1 + 2;
                     let obj = self.pop();
                     self.globals[global_index] = obj;
+                    self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
                 OpArray => {
                     let num_elements = read_uint16(instructions.rest(ip + 1)) as usize;
-                    ip += 1 + 2;
                     let mut elements = Vec::new();
                     for _ in 0..num_elements {
                         let e = self.pop();
@@ -160,10 +161,10 @@ impl VM {
                     }
                     elements.reverse();
                     self.push(Rc::new(Object::ArrayObject(elements)))?;
+                    self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
                 OpHash => {
                     let num_pairs = read_uint16(instructions.rest(ip + 1)) as usize;
-                    ip += 1 + 2;
                     let mut hash = HashMap::new();
                     for _ in 0..num_pairs {
                         let value = self.pop();
@@ -172,12 +173,13 @@ impl VM {
                         hash.insert(h, Rc::new(object::HashPair::new(key, value)));
                     }
                     self.push(Rc::new(Object::HashObject(hash)))?;
+                    self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
                 OpIndex => {
                     let index = self.pop();
                     let left = self.pop();
                     self.execute_index_expression(left, index)?;
-                    ip += 1;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpCall => {
                     let num_arguments = read_uint8(instructions.rest(ip + 1)) as usize;
@@ -190,13 +192,13 @@ impl VM {
                                 func.num_parameters(),
                                 num_arguments
                             );
-                            self.current_frame_mut().update_ip(ip + 1);
+                            self.current_frame_mut().update_ip(ip + 1 + 1);
                             let frame = Frame::new(Rc::clone(func), self.sp - num_arguments);
                             self.sp = frame.base_pointer() + func.num_locals();
                             self.push_frame(frame);
                         }
                         Object::BuiltinFunction(func) => {
-                            self.current_frame_mut().update_ip(ip + 2);
+                            self.current_frame_mut().update_ip(ip + 1 + 1);
                             let arguments = &self.stack[self.sp - num_arguments..self.sp];
                             let result = func.call(arguments)?;
                             match result {
@@ -212,7 +214,6 @@ impl VM {
                             bail!("calling non-function: {:?}", obj);
                         }
                     }
-                    continue;
                 }
                 OpReturnValue => {
                     let return_value = self.pop();
@@ -221,35 +222,38 @@ impl VM {
                     self.sp = base_pointer - 1;
 
                     self.push(return_value)?;
-                    ip = self.current_frame().ip() + 1;
+
+                    let ip = self.current_frame().ip();
+                    self.current_frame_mut().update_ip(ip);
                 }
                 OpReturn => {
                     let base_pointer = self.pop_frame().base_pointer();
                     self.sp = base_pointer - 1;
 
                     self.push(Rc::clone(&NULL))?;
-                    ip = self.current_frame().ip() + 1;
+
+                    let ip = self.current_frame().ip();
+                    self.current_frame_mut().update_ip(ip);
                 }
                 OpGetLocal => {
                     let local_index = read_uint8(instructions.rest(ip + 1)) as usize;
                     let base_pointer = self.current_frame().base_pointer();
                     self.push(Rc::clone(&self.stack[base_pointer + local_index]))?;
-                    ip = self.current_frame().ip() + 1 + 1;
+                    self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
                 OpSetLocal => {
                     let local_index = read_uint8(instructions.rest(ip + 1)) as usize;
                     let base_pointer = self.current_frame().base_pointer();
                     self.stack[base_pointer + local_index] = self.pop();
-                    ip = self.current_frame().ip() + 1 + 1;
+                    self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
                 OpGetBuiltin => {
                     let builtin_index = read_uint8(instructions.rest(ip + 1)) as usize;
                     let builtin = object::BUILTINS[builtin_index];
                     self.push(Rc::new(Object::BuiltinFunction(builtin)))?;
-                    ip += 1 + 1;
+                    self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
             }
-            self.current_frame_mut().update_ip(ip);
         }
         Ok(())
     }
