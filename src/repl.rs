@@ -21,6 +21,7 @@ pub fn start() {
     let mut constants = Vec::new();
     let mut globals = vec![Object::Dummy; 65535];
     let mut symbol_table = SymbolTable::new();
+    symbol_table.define_builtins();
 
     loop {
         print!("{}", PROMPT);

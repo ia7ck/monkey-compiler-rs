@@ -30,9 +30,11 @@ struct CompilationScope {
 
 impl Compiler {
     pub fn new() -> Self {
+        let mut symbol_table = SymbolTable::new();
+        symbol_table.define_builtins();
         Self {
             constants: vec![],
-            symbol_table: SymbolTable::new(),
+            symbol_table,
             scopes: vec![CompilationScope {
                 instructions: Instructions::new(),
                 last_instruction: None,
@@ -65,6 +67,9 @@ impl Compiler {
                     }
                     SymbolScope::LocalScope => {
                         self.emit(Opcode::OpSetLocal, &[symbol.index()]);
+                    }
+                    SymbolScope::BuiltinScope => {
+                        unreachable!();
                     }
                 }
             }
@@ -193,6 +198,9 @@ impl Compiler {
                         }
                         SymbolScope::LocalScope => {
                             self.emit(Opcode::OpGetLocal, &[index]);
+                        }
+                        SymbolScope::BuiltinScope => {
+                            self.emit(Opcode::OpGetBuiltin, &[index]);
                         }
                     }
                 } else {
@@ -389,7 +397,7 @@ mod tests {
     use crate::code::{make, Instructions};
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
-    use crate::object::Object;
+    use crate::object::{Builtin, Object};
     use crate::parser::Parser;
 
     enum Constant {
@@ -922,6 +930,40 @@ mod tests {
                     make(OpConstant, &[1]), // fn() { ... }
                     make(OpPop, &[]),
                 ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_builtins() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "len([]); push([], 42)",
+                expected_constants: vec![Integer(42)],
+                expected_instructions: vec![
+                    make(OpGetBuiltin, &[Builtin::Len as usize]),
+                    make(OpArray, &[0]),
+                    make(OpCall, &[1]),
+                    make(OpPop, &[]),
+                    make(OpGetBuiltin, &[Builtin::Push as usize]),
+                    make(OpArray, &[0]),
+                    make(OpConstant, &[0]), // 42
+                    make(OpCall, &[2]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: "fn() { len([]) }",
+                expected_constants: vec![Function(vec![
+                    make(OpGetBuiltin, &[Builtin::Len as usize]),
+                    make(OpArray, &[0]),
+                    make(OpCall, &[1]),
+                    make(OpReturnValue, &[]),
+                ])],
+                expected_instructions: vec![make(OpConstant, &[0]), make(OpPop, &[])],
             },
         ];
         run_compiler_tests(tests);
