@@ -257,11 +257,14 @@ impl Compiler {
 
                 let num_locals = self.symbol_table.num_definitions();
                 let instructions = self.leave_scope();
-                let compiled_function = CompiledFunctionObject(Rc::new(
-                    object::CompiledFunctionObject::new(instructions, num_locals, num_parameters),
-                ));
-                let operands = &[self.add_constant(compiled_function)];
-                self.emit(OpConstant, operands);
+                let compiled_function =
+                    CompiledFunctionObject(Rc::new(object::CompiledFunctionObject::new(
+                        Rc::new(instructions),
+                        num_locals,
+                        num_parameters,
+                    )));
+                let operands = &[self.add_constant(compiled_function), 0];
+                self.emit(OpClosure, operands);
             }
             CallExpression {
                 function,
@@ -399,6 +402,7 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::object::{Builtin, Object};
     use crate::parser::Parser;
+    use std::ops::Deref;
 
     enum Constant {
         Integer(i64),
@@ -779,10 +783,7 @@ mod tests {
                         make(OpReturnValue, &[]),
                     ]),
                 ],
-                expected_instructions: vec![
-                    make(OpConstant, &[2]), // function
-                    make(OpPop, &[]),
-                ],
+                expected_instructions: vec![make(OpClosure, &[2, 0]), make(OpPop, &[])],
             },
             CompilerTestCase {
                 input: "fn() { 5 + 10 }",
@@ -796,7 +797,7 @@ mod tests {
                         make(OpReturnValue, &[]),
                     ]),
                 ],
-                expected_instructions: vec![make(OpConstant, &[2]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[2, 0]), make(OpPop, &[])],
             },
             CompilerTestCase {
                 input: "fn() { 11; 22 }",
@@ -810,12 +811,12 @@ mod tests {
                         make(OpReturnValue, &[]),
                     ]),
                 ],
-                expected_instructions: vec![make(OpConstant, &[2]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[2, 0]), make(OpPop, &[])],
             },
             CompilerTestCase {
                 input: "fn() { }",
                 expected_constants: vec![Function(vec![make(OpReturn, &[])])],
-                expected_instructions: vec![make(OpConstant, &[0]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[0, 0]), make(OpPop, &[])],
             },
         ];
         run_compiler_tests(tests);
@@ -833,7 +834,7 @@ mod tests {
                     Function(vec![make(OpConstant, &[0]), make(OpReturnValue, &[])]),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[1]),
+                    make(OpClosure, &[1, 0]),
                     make(OpCall, &[0]),
                     make(OpPop, &[]),
                 ],
@@ -845,7 +846,7 @@ mod tests {
                     Function(vec![make(OpConstant, &[0]), make(OpReturnValue, &[])]),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[1]),
+                    make(OpClosure, &[1, 0]),
                     make(OpSetGlobal, &[0]),
                     make(OpGetGlobal, &[0]),
                     make(OpCall, &[0]),
@@ -859,7 +860,7 @@ mod tests {
                     Integer(42),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[0]),
+                    make(OpClosure, &[0, 0]),
                     make(OpSetGlobal, &[]),
                     make(OpGetGlobal, &[]),
                     make(OpConstant, &[1]),
@@ -883,7 +884,7 @@ mod tests {
                     Integer(33),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[0]),
+                    make(OpClosure, &[0, 0]),
                     make(OpSetGlobal, &[]),
                     make(OpGetGlobal, &[]),
                     make(OpConstant, &[1]),
@@ -911,7 +912,7 @@ mod tests {
                 expected_instructions: vec![
                     make(OpConstant, &[0]),
                     make(OpSetGlobal, &[0]),
-                    make(OpConstant, &[1]),
+                    make(OpClosure, &[1, 0]),
                     make(OpPop, &[]),
                 ],
             },
@@ -927,7 +928,7 @@ mod tests {
                     ]),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[1]), // fn() { ... }
+                    make(OpClosure, &[1, 0]), // fn() { ... }
                     make(OpPop, &[]),
                 ],
             },
@@ -963,7 +964,7 @@ mod tests {
                     make(OpCall, &[1]),
                     make(OpReturnValue, &[]),
                 ])],
-                expected_instructions: vec![make(OpConstant, &[0]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[0, 0]), make(OpPop, &[])],
             },
         ];
         run_compiler_tests(tests);
@@ -1041,7 +1042,7 @@ mod tests {
                     );
                 }
                 (Constant::Function(ins1), Object::CompiledFunctionObject(func)) => {
-                    test_instructions(ins1, func.instructions().clone());
+                    test_instructions(ins1, func.instructions().deref().clone());
                 }
                 (Constant::Function(..), obj) => {
                     panic!(

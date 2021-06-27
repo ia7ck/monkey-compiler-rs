@@ -72,6 +72,7 @@ impl Display for Instructions {
             match operand_count {
                 0 => format!("{:?}", def.opcode),
                 1 => format!("{:?} {}", def.opcode, operands[0]),
+                2 => format!("{:?} {} {}", def.opcode, operands[0], operands[1]),
                 _ => format!("ERROR: unhandled operand_count for {:?}\n", def.opcode),
             }
         }
@@ -118,6 +119,7 @@ pub enum Opcode {
     OpGetLocal,
     OpSetLocal,
     OpGetBuiltin,
+    OpClosure,
 }
 
 pub struct Definition {
@@ -167,6 +169,7 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpGetLocal, vec![1]),
         Definition::new(OpSetLocal, vec![1]),
         Definition::new(OpGetBuiltin, vec![1]),
+        Definition::new(OpClosure, vec![2, 1]),
     ]
 });
 
@@ -257,6 +260,11 @@ mod tests {
                 operands: vec![255],
                 expected: vec![OpGetLocal as u8, 255],
             },
+            TestCase {
+                op: OpClosure,
+                operands: vec![65534, 255],
+                expected: vec![OpClosure as u8, 255, 254, 255],
+            },
         ];
         for tt in tests {
             let instruction = make(tt.op, &tt.operands);
@@ -289,12 +297,14 @@ mod tests {
             make(OpGetLocal, &[1]),
             make(OpConstant, &[2]),
             make(OpConstant, &[65535]),
+            make(OpClosure, &[65535, 255]),
         ];
         let instructions: Instructions = instructions.into_iter().flatten().collect();
         let expected = r#"0000 OpAdd
 0001 OpGetLocal 1
 0003 OpConstant 2
 0006 OpConstant 65535
+0009 OpClosure 65535 255
 "#;
         let actual = format!("{}", instructions);
         assert_eq!(expected, actual);
@@ -317,6 +327,11 @@ mod tests {
                 op: OpGetLocal,
                 operands: vec![255],
                 bytes_read: 1,
+            },
+            TestCase {
+                op: OpClosure,
+                operands: vec![65535, 255],
+                bytes_read: 2 + 1,
             },
         ];
         for tt in tests {

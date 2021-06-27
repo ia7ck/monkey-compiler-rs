@@ -34,6 +34,7 @@ pub enum Object {
     HashObject(HashMap<u64, Rc<HashPair>>),
     CompiledFunctionObject(Rc<CompiledFunctionObject>),
     BuiltinFunction(Builtin),
+    ClosureObject(Rc<Closure>),
     Null,
     Dummy,
 }
@@ -71,6 +72,7 @@ impl Object {
             HashObject(..) => "HASH",
             CompiledFunctionObject(..) => "COMPILED_FUNCTION",
             BuiltinFunction(..) => "BUILTIN_FUNCTION",
+            ClosureObject(..) => "CLOSURE",
             Null => "NULL",
             Dummy => unreachable!(),
         }
@@ -108,6 +110,7 @@ impl Display for Object {
             }
             CompiledFunctionObject(..) => write!(f, "CompiledFunction[{:p}]", self),
             BuiltinFunction(func) => write!(f, "{}", func.name()),
+            ClosureObject(..) => write!(f, "Closure[{:p}]", self),
             Null => write!(f, "NULL"),
             Dummy => unreachable!(),
         }
@@ -116,21 +119,21 @@ impl Display for Object {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledFunctionObject {
-    instructions: Instructions,
+    instructions: Rc<Instructions>,
     num_locals: usize,
     num_parameters: usize,
 }
 
 impl CompiledFunctionObject {
-    pub fn new(instructions: Instructions, num_locals: usize, num_parameters: usize) -> Self {
+    pub fn new(instructions: Rc<Instructions>, num_locals: usize, num_parameters: usize) -> Self {
         Self {
             instructions,
             num_locals,
             num_parameters,
         }
     }
-    pub fn instructions(&self) -> &Instructions {
-        &self.instructions
+    pub fn instructions(&self) -> Rc<Instructions> {
+        Rc::clone(&self.instructions)
     }
     pub fn num_locals(&self) -> usize {
         self.num_locals
@@ -264,5 +267,20 @@ impl Builtin {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Closure {
+    function: Rc<CompiledFunctionObject>,
+    free: Vec<Rc<Object>>,
+}
+
+impl Closure {
+    pub fn new(function: Rc<CompiledFunctionObject>, free: Vec<Rc<Object>>) -> Self {
+        Self { function, free }
+    }
+    pub fn function(&self) -> Rc<CompiledFunctionObject> {
+        Rc::clone(&self.function)
     }
 }

@@ -36,17 +36,27 @@ impl VM {
         let constants = bytecode.constants.into_iter().map(Rc::new).collect();
         let mut frames = vec![
             Frame::new(
-                Rc::new(object::CompiledFunctionObject::new(
-                    Instructions::new(),
-                    0,
-                    0
+                Rc::new(object::Closure::new(
+                    Rc::new(object::CompiledFunctionObject::new(
+                        Rc::new(Instructions::new()),
+                        0,
+                        0
+                    )),
+                    vec![]
                 )),
                 0
             );
             MAX_FRAME
         ];
-        let main_function = object::CompiledFunctionObject::new(bytecode.instructions, 0, 0);
-        frames[0] = Frame::new(Rc::new(main_function), 0);
+        let main_closure = object::Closure::new(
+            Rc::new(object::CompiledFunctionObject::new(
+                Rc::new(bytecode.instructions),
+                0,
+                0,
+            )),
+            vec![],
+        );
+        frames[0] = Frame::new(Rc::new(main_closure), 0);
         Self {
             constants,
             stack: vec![Rc::clone(&DUMMY); STACK_SIZE],
@@ -185,16 +195,16 @@ impl VM {
                     let num_arguments = read_uint8(instructions.rest(ip + 1)) as usize;
                     let function_object = Rc::clone(&self.stack[self.sp - num_arguments - 1]);
                     match function_object.deref() {
-                        Object::CompiledFunctionObject(func) => {
+                        Object::ClosureObject(closure) => {
                             ensure!(
-                                func.num_parameters() == num_arguments,
+                                closure.function().num_parameters() == num_arguments,
                                 "wrong number of arguments: want={}, got={}",
-                                func.num_parameters(),
+                                closure.function().num_parameters(),
                                 num_arguments
                             );
                             self.current_frame_mut().update_ip(ip + 1 + 1);
-                            let frame = Frame::new(Rc::clone(func), self.sp - num_arguments);
-                            self.sp = frame.base_pointer() + func.num_locals();
+                            let frame = Frame::new(Rc::clone(closure), self.sp - num_arguments);
+                            self.sp = frame.base_pointer() + closure.function().num_locals();
                             self.push_frame(frame);
                         }
                         Object::BuiltinFunction(func) => {
@@ -211,7 +221,7 @@ impl VM {
                             }
                         }
                         obj => {
-                            bail!("calling non-function: {:?}", obj);
+                            bail!("calling non-closure adnd non-builtin: {:?}", obj);
                         }
                     }
                 }
@@ -252,6 +262,22 @@ impl VM {
                     let builtin = object::BUILTINS[builtin_index];
                     self.push(Rc::new(Object::BuiltinFunction(builtin)))?;
                     self.current_frame_mut().update_ip(ip + 1 + 1);
+                }
+                OpClosure => {
+                    let const_index = read_uint16(instructions.rest(ip + 1)) as usize;
+                    let _ = read_uint8(instructions.rest(ip + 3)) as usize;
+
+                    match self.constants[const_index].deref() {
+                        Object::CompiledFunctionObject(func) => {
+                            let closure = object::Closure::new(Rc::clone(func), vec![]);
+                            self.push(Rc::new(Object::ClosureObject(Rc::new(closure))))?;
+                        }
+                        obj => {
+                            bail!("not a function: {}", obj);
+                        }
+                    }
+
+                    self.current_frame_mut().update_ip(ip + 1 + (2 + 1));
                 }
             }
         }
@@ -968,6 +994,7 @@ mod tests {
             }
             CompiledFunctionObject(..) => unimplemented!(),
             BuiltinFunction(..) => unimplemented!(),
+            ClosureObject(..) => unimplemented!(),
             Null => {
                 assert_eq!(&Null, actual);
             }
