@@ -71,7 +71,7 @@ impl Compiler {
                         unreachable!();
                     }
                     SymbolScope::FreeScope => {
-                        unimplemented!();
+                        unreachable!();
                     }
                 }
             }
@@ -252,7 +252,7 @@ impl Compiler {
                     .iter()
                     .map(Rc::clone)
                     .collect();
-                let num_frees = free_symbols.len();
+                let num_free = free_symbols.len();
                 let num_locals = self.symbol_table.num_definitions();
                 let instructions = self.leave_scope();
 
@@ -266,7 +266,7 @@ impl Compiler {
                         num_locals,
                         num_parameters,
                     )));
-                let operands = &[self.add_constant(compiled_function), num_frees];
+                let operands = &[self.add_constant(compiled_function), num_free];
                 self.emit(OpClosure, operands);
             }
             CallExpression {

@@ -29,4 +29,7 @@ impl Frame {
     pub fn base_pointer(&self) -> usize {
         self.base_pointer
     }
+    pub fn closure(&self) -> Rc<Closure> {
+        Rc::clone(&self.closure)
+    }
 }

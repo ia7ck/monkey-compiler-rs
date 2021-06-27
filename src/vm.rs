@@ -265,11 +265,16 @@ impl VM {
                 }
                 OpClosure => {
                     let const_index = read_uint16(instructions.rest(ip + 1)) as usize;
-                    let _ = read_uint8(instructions.rest(ip + 3)) as usize;
+                    let num_free = read_uint8(instructions.rest(ip + 3)) as usize;
 
                     match self.constants[const_index].deref() {
                         Object::CompiledFunctionObject(func) => {
-                            let closure = object::Closure::new(Rc::clone(func), vec![]);
+                            let mut free = Vec::new();
+                            for i in 0..num_free {
+                                free.push(Rc::clone(&self.stack[self.sp - num_free + i]));
+                            }
+                            self.sp -= num_free;
+                            let closure = object::Closure::new(Rc::clone(func), free);
                             self.push(Rc::new(Object::ClosureObject(Rc::new(closure))))?;
                         }
                         obj => {
@@ -280,7 +285,12 @@ impl VM {
                     self.current_frame_mut().update_ip(ip + 1 + (2 + 1));
                 }
                 OpGetFree => {
-                    todo!()
+                    let free_index = read_uint8(instructions.rest(ip + 1)) as usize;
+
+                    let current_closure = self.current_frame().closure();
+                    self.push(Rc::clone(&current_closure.free()[free_index]))?;
+
+                    self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
             }
         }
@@ -951,6 +961,79 @@ mod tests {
             let actual = execute(input).unwrap_err();
             assert_eq!(expected, format!("{}", actual));
         }
+    }
+
+    #[test]
+    fn test_closures() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let newClosure = fn(a) {
+                    fn() { a; };
+                };
+                let closure = newClosure(42);
+                closure();
+                "#,
+                int!(42),
+            ),
+            (
+                r#"
+                let newAdder = fn(a, b) {
+                    fn(c) { a + b + c };
+                };
+                let adder = newAdder(1, 2);
+                adder(8);
+                "#,
+                int!(11),
+            ),
+            (
+                r#"
+                let newAdderOuter = fn(a, b) {
+                    let c = a + b;
+                    fn(d) {
+                        let e = d + c;
+                        fn(f) { e + f; };
+                    };
+                };
+                let newAdderInner = newAdderOuter(1, 2)
+                let adder = newAdderInner(3);
+                adder(8);
+                "#,
+                int!(14),
+            ),
+            (
+                r#"
+                let a = 1;
+                let newAdderOuter = fn(b) {
+                    fn(c) {
+                        fn(d) { a + b + c + d };
+                    };
+                };
+                let newAdderInner = newAdderOuter(2)
+                let adder = newAdderInner(3);
+                adder(8);
+                "#,
+                int!(14),
+            ),
+            (
+                r#"
+                let newClosure = fn(a, b) {
+                    let one = fn() { a; };
+                    let two = fn() { b; };
+                    fn() { one() + two(); };
+                };
+                let closure = newClosure(9, 90);
+                closure();
+                "#,
+                int!(99),
+            ),
+        ];
+        run_vm_tests(tests);
     }
 
     fn execute(input: &str) -> Result<Rc<Object>> {

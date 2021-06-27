@@ -283,4 +283,7 @@ impl Closure {
     pub fn function(&self) -> Rc<CompiledFunctionObject> {
         Rc::clone(&self.function)
     }
+    pub fn free(&self) -> &Vec<Rc<Object>> {
+        &self.free
+    }
 }
