@@ -58,8 +58,8 @@ impl Compiler {
         use Statement::*;
         match statement {
             LetStatement { name, value } => {
-                self.compile_expression(value)?;
                 let symbol = self.symbol_table.define(&name);
+                self.compile_expression(value)?;
                 match symbol.scope() {
                     SymbolScope::GlobalScope => {
                         self.emit(Opcode::OpSetGlobal, &[symbol.index()]);
@@ -71,6 +71,9 @@ impl Compiler {
                         unreachable!();
                     }
                     SymbolScope::FreeScope => {
+                        unreachable!();
+                    }
+                    SymbolScope::FunctionScope => {
                         unreachable!();
                     }
                 }
@@ -223,8 +226,16 @@ impl Compiler {
                 self.compile_expression(*index)?;
                 self.emit(OpIndex, &[]);
             }
-            FunctionLiteral { parameters, body } => {
+            FunctionLiteral {
+                name,
+                parameters,
+                body,
+            } => {
                 self.enter_scope();
+
+                if !name.is_empty() {
+                    self.symbol_table.define_function_name(&name);
+                }
 
                 let num_parameters = parameters.len();
 
@@ -392,6 +403,9 @@ impl Compiler {
             }
             SymbolScope::FreeScope => {
                 self.emit(Opcode::OpGetFree, &[index]);
+            }
+            SymbolScope::FunctionScope => {
+                self.emit(Opcode::OpCurrentClosure, &[]);
             }
         }
     }
@@ -1096,6 +1110,74 @@ mod tests {
                     make(OpConstant, &[0]), // 55
                     make(OpSetGlobal, &[0]),
                     make(OpClosure, &[6, 0]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_recursive_functions() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "let countDown = fn(x) { countDown(x - 1); }; countDown(42);",
+                expected_constants: vec![
+                    Integer(1),
+                    Function(vec![
+                        make(OpCurrentClosure, &[]),
+                        make(OpGetLocal, &[0]), // x
+                        make(OpConstant, &[0]), // 1
+                        make(OpSub, &[]),
+                        make(OpCall, &[1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Integer(42),
+                ],
+                expected_instructions: vec![
+                    make(OpClosure, &[1, 0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpGetGlobal, &[0]),
+                    make(OpConstant, &[2]), // 42
+                    make(OpCall, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: r#"
+                    let wrapper = fn() {
+                        let countDown = fn(x) { countDown(x - 1); };
+                        countDown(42);
+                    };
+                    wrapper();
+                "#,
+                expected_constants: vec![
+                    Integer(1),
+                    Function(vec![
+                        make(OpCurrentClosure, &[]),
+                        make(OpGetLocal, &[0]), // x
+                        make(OpConstant, &[0]), // 1
+                        make(OpSub, &[]),
+                        make(OpCall, &[1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Integer(42),
+                    Function(vec![
+                        make(OpClosure, &[1, 0]),
+                        make(OpSetLocal, &[0]),
+                        make(OpGetLocal, &[0]),
+                        make(OpConstant, &[2]), // 42
+                        make(OpCall, &[1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                ],
+                expected_instructions: vec![
+                    make(OpClosure, &[3, 0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpGetGlobal, &[0]),
+                    make(OpCall, &[0]),
                     make(OpPop, &[]),
                 ],
             },

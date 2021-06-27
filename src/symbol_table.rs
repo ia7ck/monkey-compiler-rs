@@ -8,6 +8,7 @@ pub enum SymbolScope {
     LocalScope,
     BuiltinScope,
     FreeScope,
+    FunctionScope,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -91,6 +92,15 @@ impl SymbolTable {
         });
 
         self.store.insert(symbol.name.clone(), Rc::clone(&symbol));
+        symbol
+    }
+    pub fn define_function_name(&mut self, name: &str) -> Rc<Symbol> {
+        let symbol = Rc::new(Symbol {
+            name: name.to_string(),
+            scope: SymbolScope::FunctionScope,
+            index: 3141592, // does not matter
+        });
+        self.store.insert(name.to_string(), Rc::clone(&symbol));
         symbol
     }
     pub fn resolve(&mut self, name: &str) -> Option<Rc<Symbol>> {
@@ -468,5 +478,34 @@ mod tests {
                 assert_eq!(Rc::new(sym.clone()), table.free_symbols[i]);
             }
         }
+    }
+
+    #[test]
+    fn test_define_and_resolve_function_name() {
+        let mut global = SymbolTable::new();
+        global.define_function_name("a");
+
+        let expected = Symbol {
+            name: "a".to_string(),
+            scope: SymbolScope::FunctionScope,
+            index: 3141592,
+        };
+
+        assert_eq!(Some(Rc::new(expected)), global.resolve("a"));
+    }
+
+    #[test]
+    fn test_shadowing_function_name() {
+        let mut global = SymbolTable::new();
+        global.define_function_name("a");
+        global.define("a");
+
+        let expected = Symbol {
+            name: "a".to_string(),
+            scope: SymbolScope::GlobalScope,
+            index: 0,
+        };
+
+        assert_eq!(Some(Rc::new(expected)), global.resolve("a"));
     }
 }

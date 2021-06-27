@@ -292,6 +292,11 @@ impl VM {
 
                     self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
+                OpCurrentClosure => {
+                    let current_closure = self.current_frame().closure();
+                    self.push(Rc::new(Object::ClosureObject(Rc::clone(&current_closure))))?;
+                    self.current_frame_mut().update_ip(ip + 1);
+                }
             }
         }
         Ok(())
@@ -1031,6 +1036,63 @@ mod tests {
                 closure();
                 "#,
                 int!(99),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_recursive_functions() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let countDown = fn(x) {
+                    if (x == 0) {
+                        return 0;
+                    } else {
+                        countDown(x - 1);
+                    }
+                };
+                countDown(3);
+                "#,
+                int!(0),
+            ),
+            (
+                r#"
+                let countDown = fn(x) {
+                    if (x == 0) {
+                        return 0;
+                    } else {
+                        countDown(x - 1);
+                    }
+                };
+                let wrapper = fn() {
+                    countDown(3);
+                }
+                wrapper();
+                "#,
+                int!(0),
+            ),
+            (
+                r#"
+                let wrapper = fn() {
+                    let countDown = fn(x) {
+                        if (x == 0) {
+                            return 0;
+                        } else {
+                            countDown(x - 1);
+                        }
+                    };
+                    countDown(3);
+                };
+                wrapper();
+                "#,
+                int!(0),
             ),
         ];
         run_vm_tests(tests);
