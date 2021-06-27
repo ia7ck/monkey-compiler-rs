@@ -279,6 +279,9 @@ impl VM {
 
                     self.current_frame_mut().update_ip(ip + 1 + (2 + 1));
                 }
+                OpGetFree => {
+                    todo!()
+                }
             }
         }
         Ok(())

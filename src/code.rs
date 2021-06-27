@@ -120,6 +120,7 @@ pub enum Opcode {
     OpSetLocal,
     OpGetBuiltin,
     OpClosure,
+    OpGetFree,
 }
 
 pub struct Definition {
@@ -170,6 +171,7 @@ pub static DEFINITIONS: Lazy<Vec<Definition>> = Lazy::new(|| {
         Definition::new(OpSetLocal, vec![1]),
         Definition::new(OpGetBuiltin, vec![1]),
         Definition::new(OpClosure, vec![2, 1]),
+        Definition::new(OpGetFree, vec![1]),
     ]
 });
 
