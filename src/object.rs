@@ -237,11 +237,11 @@ impl Builtin {
                 );
                 match arguments[0].deref() {
                     Object::ArrayObject(a) => {
-                        if a.len() >= 1 {
+                        if a.is_empty() {
+                            Ok(None)
+                        } else {
                             let rest: Vec<Rc<Object>> = a[1..].iter().map(Rc::clone).collect();
                             Ok(Some(Rc::new(Object::ArrayObject(rest))))
-                        } else {
-                            Ok(None)
                         }
                     }
                     obj => {

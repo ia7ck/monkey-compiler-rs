@@ -1,5 +1,3 @@
-use once_cell::sync::Lazy;
-
 use crate::code::{read_uint16, read_uint8, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::frame::Frame;
@@ -14,10 +12,10 @@ const STACK_SIZE: usize = 2048;
 const GLOBAL_SIZE: usize = 65536;
 const MAX_FRAME: usize = 1024;
 
-const TRUE: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Boolean(true)));
-const FALSE: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Boolean(false)));
-const NULL: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Null));
-const DUMMY: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Dummy));
+const TRUE: Object = Object::Boolean(true);
+const FALSE: Object = Object::Boolean(false);
+const NULL: Object = Object::Null;
+const DUMMY: Object = Object::Dummy;
 
 pub struct VM {
     constants: Vec<Rc<Object>>,
@@ -59,9 +57,9 @@ impl VM {
         frames[0] = Frame::new(Rc::new(main_closure), 0);
         Self {
             constants,
-            stack: vec![Rc::clone(&DUMMY); STACK_SIZE],
+            stack: vec![Rc::new(DUMMY); STACK_SIZE],
             sp: 0,
-            globals: vec![Rc::clone(&DUMMY); GLOBAL_SIZE],
+            globals: vec![Rc::new(DUMMY); GLOBAL_SIZE],
             frames,
             frames_index: 1,
         }
@@ -78,14 +76,14 @@ impl VM {
         if self.sp >= STACK_SIZE {
             bail!("stack overflow");
         }
-        debug_assert_ne!(obj, Rc::clone(&DUMMY));
+        debug_assert_ne!(obj, Rc::new(DUMMY));
         self.stack[self.sp] = obj;
         self.sp += 1;
         Ok(())
     }
     fn pop(&mut self) -> Rc<Object> {
         let obj = Rc::clone(&self.stack[self.sp - 1]);
-        debug_assert_ne!(obj, Rc::clone(&DUMMY));
+        debug_assert_ne!(obj, Rc::new(DUMMY));
         self.sp -= 1;
         obj
     }
@@ -113,11 +111,11 @@ impl VM {
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpTrue => {
-                    self.push(Rc::clone(&TRUE))?;
+                    self.push(Rc::new(TRUE))?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpFalse => {
-                    self.push(Rc::clone(&FALSE))?;
+                    self.push(Rc::new(FALSE))?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpEqual | OpNotEqual | OpGreaterThan => {
@@ -147,7 +145,7 @@ impl VM {
                     self.current_frame_mut().update_ip(pos);
                 }
                 OpNull => {
-                    self.push(Rc::clone(&NULL))?;
+                    self.push(Rc::new(NULL))?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpGetGlobal => {
@@ -216,7 +214,7 @@ impl VM {
                                     self.push(obj)?;
                                 }
                                 None => {
-                                    self.push(Rc::clone(&NULL))?;
+                                    self.push(Rc::new(NULL))?;
                                 }
                             }
                         }
@@ -240,7 +238,7 @@ impl VM {
                     let base_pointer = self.pop_frame().base_pointer();
                     self.sp = base_pointer - 1;
 
-                    self.push(Rc::clone(&NULL))?;
+                    self.push(Rc::new(NULL))?;
 
                     let ip = self.current_frame().ip();
                     self.current_frame_mut().update_ip(ip);
@@ -395,16 +393,16 @@ impl VM {
         match *operand {
             Boolean(value) => {
                 if value {
-                    self.push(Rc::clone(&FALSE))?;
+                    self.push(Rc::new(FALSE))?;
                 } else {
-                    self.push(Rc::clone(&TRUE))?;
+                    self.push(Rc::new(TRUE))?;
                 }
             }
             Null => {
-                self.push(Rc::clone(&TRUE))?;
+                self.push(Rc::new(TRUE))?;
             }
             _ => {
-                self.push(Rc::clone(&FALSE))?;
+                self.push(Rc::new(FALSE))?;
             }
         }
         Ok(())
@@ -436,11 +434,11 @@ impl VM {
     }
     fn execute_array_index(&mut self, elements: &[Rc<Object>], index: i64) -> Result<()> {
         if index < 0 {
-            self.push(Rc::clone(&NULL))?;
+            self.push(Rc::new(NULL))?;
             return Ok(());
         }
         match elements.get(index as usize) {
-            None => self.push(Rc::clone(&NULL)),
+            None => self.push(Rc::new(NULL)),
             Some(e) => self.push(Rc::clone(e)),
         }
     }
@@ -451,15 +449,15 @@ impl VM {
     ) -> Result<()> {
         let key = index.calculate_hash()?;
         match hash.get(&key) {
-            None => self.push(Rc::clone(&NULL)),
+            None => self.push(Rc::new(NULL)),
             Some(pair) => self.push(pair.value()),
         }
     }
     fn native_bool_to_boolean_object(value: bool) -> Rc<Object> {
         if value {
-            Rc::clone(&TRUE)
+            Rc::new(TRUE)
         } else {
-            Rc::clone(&FALSE)
+            Rc::new(FALSE)
         }
     }
     fn is_truthy(obj: &Object) -> bool {
