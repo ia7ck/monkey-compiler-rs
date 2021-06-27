@@ -107,12 +107,23 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 let value = self.parse_expression(Precedence::LOWEST)?;
 
+                let value = match value {
+                    Expression::FunctionLiteral {
+                        parameters, body, ..
+                    } => Expression::FunctionLiteral {
+                        name: name.clone(),
+                        parameters,
+                        body,
+                    },
+                    _ => value,
+                };
+
                 if self.peek_token_is(&Token::SEMICOLON) {
                     self.next_token();
                 }
                 Ok(Statement::LetStatement { name, value })
             }
-            peek => bail!("expected next token to be LET, got {:?} instead", peek),
+            peek => bail!("expected next token to be IDENT, got {:?} instead", peek),
         }
     }
     fn parse_return_statement(&mut self) -> Result<Statement> {
@@ -331,6 +342,7 @@ impl<'a> Parser<'a> {
 
         let body = self.parse_block_statement()?;
         Ok(Expression::FunctionLiteral {
+            name: "".to_string(),
             parameters,
             body: Box::new(body),
         })
@@ -527,6 +539,7 @@ mod tests {
         assert_eq!(
             stmt,
             &Statement::ExpressionStatement(Expression::FunctionLiteral {
+                name: "".to_string(),
                 parameters: vec![Expression::Identifier("x".to_string())],
                 body: Box::new(Statement::BlockStatement(vec![Statement::ReturnStatement(
                     Expression::InfixExpression {
@@ -558,6 +571,25 @@ mod tests {
                     }
                 ]
             })
+        )
+    }
+
+    #[test]
+    fn test_function_literal_with_name() {
+        let program = parse("let myFunction = fn() { };");
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1);
+        let stmt = &statements[0];
+        assert_eq!(
+            stmt,
+            &Statement::LetStatement {
+                name: "myFunction".to_string(),
+                value: Expression::FunctionLiteral {
+                    name: "myFunction".to_string(),
+                    parameters: vec![],
+                    body: Box::new(Statement::BlockStatement(vec![])),
+                }
+            }
         )
     }
 

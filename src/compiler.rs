@@ -2,9 +2,8 @@ use crate::ast::{Expression, InfixOperator, PrefixOperator, Program, Statement};
 use crate::code::{make, Instructions, Opcode, DEFINITIONS};
 use crate::object;
 use crate::object::Object;
-use crate::symbol_table::{SymbolScope, SymbolTable};
+use crate::symbol_table::{Symbol, SymbolScope, SymbolTable};
 use anyhow::{bail, Result};
-use std::borrow::Borrow;
 use std::rc::Rc;
 
 pub struct Compiler {
@@ -59,8 +58,8 @@ impl Compiler {
         use Statement::*;
         match statement {
             LetStatement { name, value } => {
-                self.compile_expression(value)?;
                 let symbol = self.symbol_table.define(&name);
+                self.compile_expression(value)?;
                 match symbol.scope() {
                     SymbolScope::GlobalScope => {
                         self.emit(Opcode::OpSetGlobal, &[symbol.index()]);
@@ -69,6 +68,12 @@ impl Compiler {
                         self.emit(Opcode::OpSetLocal, &[symbol.index()]);
                     }
                     SymbolScope::BuiltinScope => {
+                        unreachable!();
+                    }
+                    SymbolScope::FreeScope => {
+                        unreachable!();
+                    }
+                    SymbolScope::FunctionScope => {
                         unreachable!();
                     }
                 }
@@ -190,19 +195,8 @@ impl Compiler {
                 self.change_operand(jump_pos, after_alternative_pos);
             }
             Identifier(name) => {
-                if let Some(symbol) = self.symbol_table.borrow().resolve(&name) {
-                    let index = symbol.index();
-                    match symbol.scope() {
-                        SymbolScope::GlobalScope => {
-                            self.emit(Opcode::OpGetGlobal, &[index]);
-                        }
-                        SymbolScope::LocalScope => {
-                            self.emit(Opcode::OpGetLocal, &[index]);
-                        }
-                        SymbolScope::BuiltinScope => {
-                            self.emit(Opcode::OpGetBuiltin, &[index]);
-                        }
-                    }
+                if let Some(symbol) = self.symbol_table.resolve(&name) {
+                    self.load_symbol(symbol);
                 } else {
                     bail!("undefined variable {}", name);
                 }
@@ -232,8 +226,16 @@ impl Compiler {
                 self.compile_expression(*index)?;
                 self.emit(OpIndex, &[]);
             }
-            FunctionLiteral { parameters, body } => {
+            FunctionLiteral {
+                name,
+                parameters,
+                body,
+            } => {
                 self.enter_scope();
+
+                if !name.is_empty() {
+                    self.symbol_table.define_function_name(&name);
+                }
 
                 let num_parameters = parameters.len();
 
@@ -255,13 +257,28 @@ impl Compiler {
                     self.emit(OpReturn, &[]);
                 }
 
+                let free_symbols: Vec<Rc<Symbol>> = self
+                    .symbol_table
+                    .free_symbols()
+                    .iter()
+                    .map(Rc::clone)
+                    .collect();
+                let num_free = free_symbols.len();
                 let num_locals = self.symbol_table.num_definitions();
                 let instructions = self.leave_scope();
-                let compiled_function = CompiledFunctionObject(Rc::new(
-                    object::CompiledFunctionObject::new(instructions, num_locals, num_parameters),
-                ));
-                let operands = &[self.add_constant(compiled_function)];
-                self.emit(OpConstant, operands);
+
+                for sym in free_symbols {
+                    self.load_symbol(sym);
+                }
+
+                let compiled_function =
+                    CompiledFunctionObject(Rc::new(object::CompiledFunctionObject::new(
+                        Rc::new(instructions),
+                        num_locals,
+                        num_parameters,
+                    )));
+                let operands = &[self.add_constant(compiled_function), num_free];
+                self.emit(OpClosure, operands);
             }
             CallExpression {
                 function,
@@ -372,6 +389,26 @@ impl Compiler {
             .as_mut()
             .unwrap_or_else(|| panic!("there is no last emitted instruction"))
     }
+    fn load_symbol(&mut self, symbol: Rc<Symbol>) {
+        let index = symbol.index();
+        match symbol.scope() {
+            SymbolScope::GlobalScope => {
+                self.emit(Opcode::OpGetGlobal, &[index]);
+            }
+            SymbolScope::LocalScope => {
+                self.emit(Opcode::OpGetLocal, &[index]);
+            }
+            SymbolScope::BuiltinScope => {
+                self.emit(Opcode::OpGetBuiltin, &[index]);
+            }
+            SymbolScope::FreeScope => {
+                self.emit(Opcode::OpGetFree, &[index]);
+            }
+            SymbolScope::FunctionScope => {
+                self.emit(Opcode::OpCurrentClosure, &[]);
+            }
+        }
+    }
     pub fn constants(&self) -> &Vec<Object> {
         &self.constants
     }
@@ -399,6 +436,7 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::object::{Builtin, Object};
     use crate::parser::Parser;
+    use std::ops::Deref;
 
     enum Constant {
         Integer(i64),
@@ -779,10 +817,7 @@ mod tests {
                         make(OpReturnValue, &[]),
                     ]),
                 ],
-                expected_instructions: vec![
-                    make(OpConstant, &[2]), // function
-                    make(OpPop, &[]),
-                ],
+                expected_instructions: vec![make(OpClosure, &[2, 0]), make(OpPop, &[])],
             },
             CompilerTestCase {
                 input: "fn() { 5 + 10 }",
@@ -796,7 +831,7 @@ mod tests {
                         make(OpReturnValue, &[]),
                     ]),
                 ],
-                expected_instructions: vec![make(OpConstant, &[2]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[2, 0]), make(OpPop, &[])],
             },
             CompilerTestCase {
                 input: "fn() { 11; 22 }",
@@ -810,12 +845,12 @@ mod tests {
                         make(OpReturnValue, &[]),
                     ]),
                 ],
-                expected_instructions: vec![make(OpConstant, &[2]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[2, 0]), make(OpPop, &[])],
             },
             CompilerTestCase {
                 input: "fn() { }",
                 expected_constants: vec![Function(vec![make(OpReturn, &[])])],
-                expected_instructions: vec![make(OpConstant, &[0]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[0, 0]), make(OpPop, &[])],
             },
         ];
         run_compiler_tests(tests);
@@ -833,7 +868,7 @@ mod tests {
                     Function(vec![make(OpConstant, &[0]), make(OpReturnValue, &[])]),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[1]),
+                    make(OpClosure, &[1, 0]),
                     make(OpCall, &[0]),
                     make(OpPop, &[]),
                 ],
@@ -845,7 +880,7 @@ mod tests {
                     Function(vec![make(OpConstant, &[0]), make(OpReturnValue, &[])]),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[1]),
+                    make(OpClosure, &[1, 0]),
                     make(OpSetGlobal, &[0]),
                     make(OpGetGlobal, &[0]),
                     make(OpCall, &[0]),
@@ -859,7 +894,7 @@ mod tests {
                     Integer(42),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[0]),
+                    make(OpClosure, &[0, 0]),
                     make(OpSetGlobal, &[]),
                     make(OpGetGlobal, &[]),
                     make(OpConstant, &[1]),
@@ -883,7 +918,7 @@ mod tests {
                     Integer(33),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[0]),
+                    make(OpClosure, &[0, 0]),
                     make(OpSetGlobal, &[]),
                     make(OpGetGlobal, &[]),
                     make(OpConstant, &[1]),
@@ -911,7 +946,7 @@ mod tests {
                 expected_instructions: vec![
                     make(OpConstant, &[0]),
                     make(OpSetGlobal, &[0]),
-                    make(OpConstant, &[1]),
+                    make(OpClosure, &[1, 0]),
                     make(OpPop, &[]),
                 ],
             },
@@ -927,7 +962,7 @@ mod tests {
                     ]),
                 ],
                 expected_instructions: vec![
-                    make(OpConstant, &[1]), // fn() { ... }
+                    make(OpClosure, &[1, 0]), // fn() { ... }
                     make(OpPop, &[]),
                 ],
             },
@@ -963,7 +998,188 @@ mod tests {
                     make(OpCall, &[1]),
                     make(OpReturnValue, &[]),
                 ])],
-                expected_instructions: vec![make(OpConstant, &[0]), make(OpPop, &[])],
+                expected_instructions: vec![make(OpClosure, &[0, 0]), make(OpPop, &[])],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_closures() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "fn(a) { fn(b) { a + b } }",
+                expected_constants: vec![
+                    Function(vec![
+                        make(OpGetFree, &[0]),  // a
+                        make(OpGetLocal, &[0]), // b
+                        make(OpAdd, &[]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Function(vec![
+                        make(OpGetLocal, &[0]),   // fn(b) { ... }
+                        make(OpClosure, &[0, 1]), // one free variable: `a`
+                        make(OpReturnValue, &[]),
+                    ]),
+                ],
+                expected_instructions: vec![make(OpClosure, &[1, 0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: r#"
+                    fn(a) {
+                        fn(b) {
+                            fn(c) {
+                                a + b + c
+                            }
+                        }
+                    }
+                "#,
+                expected_constants: vec![
+                    Function(vec![
+                        make(OpGetFree, &[0]), // a
+                        make(OpGetFree, &[1]), // b
+                        make(OpAdd, &[]),
+                        make(OpGetLocal, &[0]), // c
+                        make(OpAdd, &[]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Function(vec![
+                        make(OpGetFree, &[0]),    // b
+                        make(OpGetLocal, &[0]),   // fn(c) { ... }
+                        make(OpClosure, &[0, 2]), // two free variables: `a`, `b`
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Function(vec![
+                        make(OpGetLocal, &[0]), // fn(b) { ... }
+                        make(OpClosure, &[1, 1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                ],
+                expected_instructions: vec![make(OpClosure, &[2, 0]), make(OpPop, &[])],
+            },
+            CompilerTestCase {
+                input: r#"
+                    let global = 55;
+                    fn() {
+                        let a = 66;
+                        fn() {
+                            let b = 77;
+                            fn() {
+                                let c = 88;
+                                global + a + b + c;
+                            }
+                        }
+                    }
+                "#,
+                expected_constants: vec![
+                    Integer(55),
+                    Integer(66),
+                    Integer(77),
+                    Integer(88),
+                    Function(vec![
+                        make(OpConstant, &[3]), // 88
+                        make(OpSetLocal, &[]),
+                        make(OpGetGlobal, &[]), // global
+                        make(OpGetFree, &[0]),  // a
+                        make(OpAdd, &[]),
+                        make(OpGetFree, &[1]), // b
+                        make(OpAdd, &[]),
+                        make(OpGetLocal, &[0]), // c
+                        make(OpAdd, &[]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Function(vec![
+                        make(OpConstant, &[2]), // 77
+                        make(OpSetLocal, &[0]),
+                        make(OpGetFree, &[0]),  // a
+                        make(OpGetLocal, &[0]), // b
+                        make(OpClosure, &[4, 2]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Function(vec![
+                        make(OpConstant, &[1]), // 66
+                        make(OpSetLocal, &[0]),
+                        make(OpGetLocal, &[0]), // a
+                        make(OpClosure, &[5, 1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                ],
+                expected_instructions: vec![
+                    make(OpConstant, &[0]), // 55
+                    make(OpSetGlobal, &[0]),
+                    make(OpClosure, &[6, 0]),
+                    make(OpPop, &[]),
+                ],
+            },
+        ];
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn test_recursive_functions() {
+        use Constant::*;
+        use Opcode::*;
+        let tests = vec![
+            CompilerTestCase {
+                input: "let countDown = fn(x) { countDown(x - 1); }; countDown(42);",
+                expected_constants: vec![
+                    Integer(1),
+                    Function(vec![
+                        make(OpCurrentClosure, &[]),
+                        make(OpGetLocal, &[0]), // x
+                        make(OpConstant, &[0]), // 1
+                        make(OpSub, &[]),
+                        make(OpCall, &[1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Integer(42),
+                ],
+                expected_instructions: vec![
+                    make(OpClosure, &[1, 0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpGetGlobal, &[0]),
+                    make(OpConstant, &[2]), // 42
+                    make(OpCall, &[1]),
+                    make(OpPop, &[]),
+                ],
+            },
+            CompilerTestCase {
+                input: r#"
+                    let wrapper = fn() {
+                        let countDown = fn(x) { countDown(x - 1); };
+                        countDown(42);
+                    };
+                    wrapper();
+                "#,
+                expected_constants: vec![
+                    Integer(1),
+                    Function(vec![
+                        make(OpCurrentClosure, &[]),
+                        make(OpGetLocal, &[0]), // x
+                        make(OpConstant, &[0]), // 1
+                        make(OpSub, &[]),
+                        make(OpCall, &[1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                    Integer(42),
+                    Function(vec![
+                        make(OpClosure, &[1, 0]),
+                        make(OpSetLocal, &[0]),
+                        make(OpGetLocal, &[0]),
+                        make(OpConstant, &[2]), // 42
+                        make(OpCall, &[1]),
+                        make(OpReturnValue, &[]),
+                    ]),
+                ],
+                expected_instructions: vec![
+                    make(OpClosure, &[3, 0]),
+                    make(OpSetGlobal, &[0]),
+                    make(OpGetGlobal, &[0]),
+                    make(OpCall, &[0]),
+                    make(OpPop, &[]),
+                ],
             },
         ];
         run_compiler_tests(tests);
@@ -1041,7 +1257,7 @@ mod tests {
                     );
                 }
                 (Constant::Function(ins1), Object::CompiledFunctionObject(func)) => {
-                    test_instructions(ins1, func.instructions().clone());
+                    test_instructions(ins1, func.instructions().deref().clone());
                 }
                 (Constant::Function(..), obj) => {
                     panic!(

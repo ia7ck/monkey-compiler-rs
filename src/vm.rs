@@ -1,5 +1,3 @@
-use once_cell::sync::Lazy;
-
 use crate::code::{read_uint16, read_uint8, Instructions, Opcode, DEFINITIONS};
 use crate::compiler::Bytecode;
 use crate::frame::Frame;
@@ -14,10 +12,10 @@ const STACK_SIZE: usize = 2048;
 const GLOBAL_SIZE: usize = 65536;
 const MAX_FRAME: usize = 1024;
 
-const TRUE: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Boolean(true)));
-const FALSE: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Boolean(false)));
-const NULL: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Null));
-const DUMMY: Lazy<Rc<Object>> = Lazy::new(|| Rc::new(Object::Dummy));
+const TRUE: Object = Object::Boolean(true);
+const FALSE: Object = Object::Boolean(false);
+const NULL: Object = Object::Null;
+const DUMMY: Object = Object::Dummy;
 
 pub struct VM {
     constants: Vec<Rc<Object>>,
@@ -36,22 +34,32 @@ impl VM {
         let constants = bytecode.constants.into_iter().map(Rc::new).collect();
         let mut frames = vec![
             Frame::new(
-                Rc::new(object::CompiledFunctionObject::new(
-                    Instructions::new(),
-                    0,
-                    0
+                Rc::new(object::Closure::new(
+                    Rc::new(object::CompiledFunctionObject::new(
+                        Rc::new(Instructions::new()),
+                        0,
+                        0
+                    )),
+                    vec![]
                 )),
                 0
             );
             MAX_FRAME
         ];
-        let main_function = object::CompiledFunctionObject::new(bytecode.instructions, 0, 0);
-        frames[0] = Frame::new(Rc::new(main_function), 0);
+        let main_closure = object::Closure::new(
+            Rc::new(object::CompiledFunctionObject::new(
+                Rc::new(bytecode.instructions),
+                0,
+                0,
+            )),
+            vec![],
+        );
+        frames[0] = Frame::new(Rc::new(main_closure), 0);
         Self {
             constants,
-            stack: vec![Rc::clone(&DUMMY); STACK_SIZE],
+            stack: vec![Rc::new(DUMMY); STACK_SIZE],
             sp: 0,
-            globals: vec![Rc::clone(&DUMMY); GLOBAL_SIZE],
+            globals: vec![Rc::new(DUMMY); GLOBAL_SIZE],
             frames,
             frames_index: 1,
         }
@@ -68,14 +76,14 @@ impl VM {
         if self.sp >= STACK_SIZE {
             bail!("stack overflow");
         }
-        debug_assert_ne!(obj, Rc::clone(&DUMMY));
+        debug_assert_ne!(obj, Rc::new(DUMMY));
         self.stack[self.sp] = obj;
         self.sp += 1;
         Ok(())
     }
     fn pop(&mut self) -> Rc<Object> {
         let obj = Rc::clone(&self.stack[self.sp - 1]);
-        debug_assert_ne!(obj, Rc::clone(&DUMMY));
+        debug_assert_ne!(obj, Rc::new(DUMMY));
         self.sp -= 1;
         obj
     }
@@ -103,11 +111,11 @@ impl VM {
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpTrue => {
-                    self.push(Rc::clone(&TRUE))?;
+                    self.push(Rc::new(TRUE))?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpFalse => {
-                    self.push(Rc::clone(&FALSE))?;
+                    self.push(Rc::new(FALSE))?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpEqual | OpNotEqual | OpGreaterThan => {
@@ -137,7 +145,7 @@ impl VM {
                     self.current_frame_mut().update_ip(pos);
                 }
                 OpNull => {
-                    self.push(Rc::clone(&NULL))?;
+                    self.push(Rc::new(NULL))?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpGetGlobal => {
@@ -185,16 +193,16 @@ impl VM {
                     let num_arguments = read_uint8(instructions.rest(ip + 1)) as usize;
                     let function_object = Rc::clone(&self.stack[self.sp - num_arguments - 1]);
                     match function_object.deref() {
-                        Object::CompiledFunctionObject(func) => {
+                        Object::ClosureObject(closure) => {
                             ensure!(
-                                func.num_parameters() == num_arguments,
+                                closure.function().num_parameters() == num_arguments,
                                 "wrong number of arguments: want={}, got={}",
-                                func.num_parameters(),
+                                closure.function().num_parameters(),
                                 num_arguments
                             );
                             self.current_frame_mut().update_ip(ip + 1 + 1);
-                            let frame = Frame::new(Rc::clone(func), self.sp - num_arguments);
-                            self.sp = frame.base_pointer() + func.num_locals();
+                            let frame = Frame::new(Rc::clone(closure), self.sp - num_arguments);
+                            self.sp = frame.base_pointer() + closure.function().num_locals();
                             self.push_frame(frame);
                         }
                         Object::BuiltinFunction(func) => {
@@ -206,12 +214,12 @@ impl VM {
                                     self.push(obj)?;
                                 }
                                 None => {
-                                    self.push(Rc::clone(&NULL))?;
+                                    self.push(Rc::new(NULL))?;
                                 }
                             }
                         }
                         obj => {
-                            bail!("calling non-function: {:?}", obj);
+                            bail!("calling non-closure adnd non-builtin: {:?}", obj);
                         }
                     }
                 }
@@ -230,7 +238,7 @@ impl VM {
                     let base_pointer = self.pop_frame().base_pointer();
                     self.sp = base_pointer - 1;
 
-                    self.push(Rc::clone(&NULL))?;
+                    self.push(Rc::new(NULL))?;
 
                     let ip = self.current_frame().ip();
                     self.current_frame_mut().update_ip(ip);
@@ -252,6 +260,40 @@ impl VM {
                     let builtin = object::BUILTINS[builtin_index];
                     self.push(Rc::new(Object::BuiltinFunction(builtin)))?;
                     self.current_frame_mut().update_ip(ip + 1 + 1);
+                }
+                OpClosure => {
+                    let const_index = read_uint16(instructions.rest(ip + 1)) as usize;
+                    let num_free = read_uint8(instructions.rest(ip + 3)) as usize;
+
+                    match self.constants[const_index].deref() {
+                        Object::CompiledFunctionObject(func) => {
+                            let mut free = Vec::new();
+                            for i in 0..num_free {
+                                free.push(Rc::clone(&self.stack[self.sp - num_free + i]));
+                            }
+                            self.sp -= num_free;
+                            let closure = object::Closure::new(Rc::clone(func), free);
+                            self.push(Rc::new(Object::ClosureObject(Rc::new(closure))))?;
+                        }
+                        obj => {
+                            bail!("not a function: {}", obj);
+                        }
+                    }
+
+                    self.current_frame_mut().update_ip(ip + 1 + (2 + 1));
+                }
+                OpGetFree => {
+                    let free_index = read_uint8(instructions.rest(ip + 1)) as usize;
+
+                    let current_closure = self.current_frame().closure();
+                    self.push(Rc::clone(&current_closure.free()[free_index]))?;
+
+                    self.current_frame_mut().update_ip(ip + 1 + 1);
+                }
+                OpCurrentClosure => {
+                    let current_closure = self.current_frame().closure();
+                    self.push(Rc::new(Object::ClosureObject(Rc::clone(&current_closure))))?;
+                    self.current_frame_mut().update_ip(ip + 1);
                 }
             }
         }
@@ -351,16 +393,16 @@ impl VM {
         match *operand {
             Boolean(value) => {
                 if value {
-                    self.push(Rc::clone(&FALSE))?;
+                    self.push(Rc::new(FALSE))?;
                 } else {
-                    self.push(Rc::clone(&TRUE))?;
+                    self.push(Rc::new(TRUE))?;
                 }
             }
             Null => {
-                self.push(Rc::clone(&TRUE))?;
+                self.push(Rc::new(TRUE))?;
             }
             _ => {
-                self.push(Rc::clone(&FALSE))?;
+                self.push(Rc::new(FALSE))?;
             }
         }
         Ok(())
@@ -392,11 +434,11 @@ impl VM {
     }
     fn execute_array_index(&mut self, elements: &[Rc<Object>], index: i64) -> Result<()> {
         if index < 0 {
-            self.push(Rc::clone(&NULL))?;
+            self.push(Rc::new(NULL))?;
             return Ok(());
         }
         match elements.get(index as usize) {
-            None => self.push(Rc::clone(&NULL)),
+            None => self.push(Rc::new(NULL)),
             Some(e) => self.push(Rc::clone(e)),
         }
     }
@@ -407,15 +449,15 @@ impl VM {
     ) -> Result<()> {
         let key = index.calculate_hash()?;
         match hash.get(&key) {
-            None => self.push(Rc::clone(&NULL)),
+            None => self.push(Rc::new(NULL)),
             Some(pair) => self.push(pair.value()),
         }
     }
     fn native_bool_to_boolean_object(value: bool) -> Rc<Object> {
         if value {
-            Rc::clone(&TRUE)
+            Rc::new(TRUE)
         } else {
-            Rc::clone(&FALSE)
+            Rc::new(FALSE)
         }
     }
     fn is_truthy(obj: &Object) -> bool {
@@ -924,6 +966,136 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_closures() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let newClosure = fn(a) {
+                    fn() { a; };
+                };
+                let closure = newClosure(42);
+                closure();
+                "#,
+                int!(42),
+            ),
+            (
+                r#"
+                let newAdder = fn(a, b) {
+                    fn(c) { a + b + c };
+                };
+                let adder = newAdder(1, 2);
+                adder(8);
+                "#,
+                int!(11),
+            ),
+            (
+                r#"
+                let newAdderOuter = fn(a, b) {
+                    let c = a + b;
+                    fn(d) {
+                        let e = d + c;
+                        fn(f) { e + f; };
+                    };
+                };
+                let newAdderInner = newAdderOuter(1, 2)
+                let adder = newAdderInner(3);
+                adder(8);
+                "#,
+                int!(14),
+            ),
+            (
+                r#"
+                let a = 1;
+                let newAdderOuter = fn(b) {
+                    fn(c) {
+                        fn(d) { a + b + c + d };
+                    };
+                };
+                let newAdderInner = newAdderOuter(2)
+                let adder = newAdderInner(3);
+                adder(8);
+                "#,
+                int!(14),
+            ),
+            (
+                r#"
+                let newClosure = fn(a, b) {
+                    let one = fn() { a; };
+                    let two = fn() { b; };
+                    fn() { one() + two(); };
+                };
+                let closure = newClosure(9, 90);
+                closure();
+                "#,
+                int!(99),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn test_recursive_functions() {
+        macro_rules! int {
+            ($x: expr) => {
+                Object::Integer($x)
+            };
+        }
+        let tests = vec![
+            (
+                r#"
+                let countDown = fn(x) {
+                    if (x == 0) {
+                        return 0;
+                    } else {
+                        countDown(x - 1);
+                    }
+                };
+                countDown(3);
+                "#,
+                int!(0),
+            ),
+            (
+                r#"
+                let countDown = fn(x) {
+                    if (x == 0) {
+                        return 0;
+                    } else {
+                        countDown(x - 1);
+                    }
+                };
+                let wrapper = fn() {
+                    countDown(3);
+                }
+                wrapper();
+                "#,
+                int!(0),
+            ),
+            (
+                r#"
+                let wrapper = fn() {
+                    let countDown = fn(x) {
+                        if (x == 0) {
+                            return 0;
+                        } else {
+                            countDown(x - 1);
+                        }
+                    };
+                    countDown(3);
+                };
+                wrapper();
+                "#,
+                int!(0),
+            ),
+        ];
+        run_vm_tests(tests);
+    }
+
     fn execute(input: &str) -> Result<Rc<Object>> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
@@ -968,6 +1140,7 @@ mod tests {
             }
             CompiledFunctionObject(..) => unimplemented!(),
             BuiltinFunction(..) => unimplemented!(),
+            ClosureObject(..) => unimplemented!(),
             Null => {
                 assert_eq!(&Null, actual);
             }

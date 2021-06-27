@@ -7,6 +7,8 @@ pub enum SymbolScope {
     GlobalScope,
     LocalScope,
     BuiltinScope,
+    FreeScope,
+    FunctionScope,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -31,6 +33,8 @@ pub struct SymbolTable {
 
     store: HashMap<String, Rc<Symbol>>,
     num_definitions: usize,
+
+    free_symbols: Vec<Rc<Symbol>>,
 }
 
 impl SymbolTable {
@@ -39,6 +43,7 @@ impl SymbolTable {
             outer: None,
             store: HashMap::new(),
             num_definitions: 0,
+            free_symbols: Vec::new(),
         }
     }
     pub fn new_enclosed_symbol_table(outer: Box<SymbolTable>) -> Self {
@@ -46,6 +51,7 @@ impl SymbolTable {
             outer: Some(outer),
             store: HashMap::new(),
             num_definitions: 0,
+            free_symbols: Vec::new(),
         }
     }
     pub fn define(&mut self, name: &str) -> Rc<Symbol> {
@@ -76,17 +82,48 @@ impl SymbolTable {
             self.define_builtin(i, builtin.name());
         }
     }
-    pub fn resolve(&self, name: &str) -> Option<&Symbol> {
-        if let Some(symbol) = self.store.get(name) {
-            return Some(symbol);
+    pub fn define_free(&mut self, original: Rc<Symbol>) -> Rc<Symbol> {
+        self.free_symbols.push(Rc::clone(&original));
+
+        let symbol = Rc::new(Symbol {
+            name: original.name.clone(),
+            scope: SymbolScope::FreeScope,
+            index: self.free_symbols.len() - 1,
+        });
+
+        self.store.insert(symbol.name.clone(), Rc::clone(&symbol));
+        symbol
+    }
+    pub fn define_function_name(&mut self, name: &str) -> Rc<Symbol> {
+        let symbol = Rc::new(Symbol {
+            name: name.to_string(),
+            scope: SymbolScope::FunctionScope,
+            index: 3141592, // does not matter
+        });
+        self.store.insert(name.to_string(), Rc::clone(&symbol));
+        symbol
+    }
+    pub fn resolve(&mut self, name: &str) -> Option<Rc<Symbol>> {
+        match self.store.get(name) {
+            None => {
+                let outer = self.outer.as_mut()?;
+                let symbol = outer.resolve(name)?;
+                match symbol.scope {
+                    SymbolScope::GlobalScope | SymbolScope::BuiltinScope => Some(symbol),
+                    _ => Some(self.define_free(symbol)),
+                }
+            }
+            Some(symbol) => Some(Rc::clone(symbol)),
         }
-        self.outer.as_ref().and_then(|table| table.resolve(name))
     }
     pub fn outer(&self) -> Option<&SymbolTable> {
         self.outer.as_deref()
     }
     pub fn num_definitions(&self) -> usize {
         self.num_definitions
+    }
+    pub fn free_symbols(&self) -> &Vec<Rc<Symbol>> {
+        &self.free_symbols
     }
 }
 
@@ -144,8 +181,7 @@ mod tests {
             ),
         ];
         for (name, symbol) in tests {
-            let res = global.resolve(name).unwrap();
-            assert_eq!(res, &symbol);
+            assert_eq!(global.resolve(name), Some(Rc::new(symbol)));
         }
     }
 
@@ -195,8 +231,7 @@ mod tests {
             ),
         ];
         for (name, symbol) in tests {
-            let res = local.resolve(name).unwrap();
-            assert_eq!(res, &symbol);
+            assert_eq!(local.resolve(name), Some(Rc::new(symbol)));
         }
     }
 
@@ -210,7 +245,7 @@ mod tests {
         let mut first_local = SymbolTable::new_enclosed_symbol_table(global);
         first_local.define("c");
         first_local.define("d");
-        let first_local = Box::new(first_local);
+        let mut first_local = Box::new(first_local);
 
         let mut second_local = SymbolTable::new_enclosed_symbol_table(first_local.clone());
         second_local.define("e");
@@ -287,13 +322,11 @@ mod tests {
         ];
 
         for (name, symbol) in first_tests {
-            let res = first_local.resolve(name).unwrap();
-            assert_eq!(res, &symbol);
+            assert_eq!(first_local.resolve(name), Some(Rc::new(symbol)));
         }
 
         for (name, symbol) in second_tests {
-            let res = second_local.resolve(name).unwrap();
-            assert_eq!(res, &symbol);
+            assert_eq!(second_local.resolve(name), Some(Rc::new(symbol)));
         }
     }
 
@@ -335,10 +368,144 @@ mod tests {
         let second_local = Box::new(second_local);
 
         for table in &[global, first_local, second_local] {
-            for sym in expected_symbols.iter().clone() {
+            let mut table = table.clone();
+            for sym in &expected_symbols {
                 let actual = table.resolve(&sym.name);
-                assert_eq!(Some(sym), actual);
+                assert_eq!(Some(Rc::new(sym.clone())), actual);
             }
         }
+    }
+
+    #[test]
+    fn test_resolve_free() {
+        let global = SymbolTable::new();
+        let mut global = Box::new(global);
+        global.define("a");
+        global.define("b");
+
+        let first_local = SymbolTable::new_enclosed_symbol_table(global.clone());
+        let mut first_local = Box::new(first_local);
+        first_local.define("c");
+        first_local.define("d");
+
+        let second_local = SymbolTable::new_enclosed_symbol_table(first_local.clone());
+        let mut second_local = Box::new(second_local);
+        second_local.define("e");
+        second_local.define("f");
+
+        let tests = vec![
+            (
+                first_local,
+                vec![
+                    Symbol {
+                        name: "a".to_string(),
+                        scope: SymbolScope::GlobalScope,
+                        index: 0,
+                    },
+                    Symbol {
+                        name: "b".to_string(),
+                        scope: SymbolScope::GlobalScope,
+                        index: 1,
+                    },
+                    Symbol {
+                        name: "c".to_string(),
+                        scope: SymbolScope::LocalScope,
+                        index: 0,
+                    },
+                    Symbol {
+                        name: "d".to_string(),
+                        scope: SymbolScope::LocalScope,
+                        index: 1,
+                    },
+                ],
+                vec![],
+            ),
+            (
+                second_local,
+                vec![
+                    Symbol {
+                        name: "a".to_string(),
+                        scope: SymbolScope::GlobalScope,
+                        index: 0,
+                    },
+                    Symbol {
+                        name: "b".to_string(),
+                        scope: SymbolScope::GlobalScope,
+                        index: 1,
+                    },
+                    Symbol {
+                        name: "c".to_string(),
+                        scope: SymbolScope::FreeScope,
+                        index: 0,
+                    },
+                    Symbol {
+                        name: "d".to_string(),
+                        scope: SymbolScope::FreeScope,
+                        index: 1,
+                    },
+                    Symbol {
+                        name: "e".to_string(),
+                        scope: SymbolScope::LocalScope,
+                        index: 0,
+                    },
+                    Symbol {
+                        name: "f".to_string(),
+                        scope: SymbolScope::LocalScope,
+                        index: 1,
+                    },
+                ],
+                vec![
+                    Symbol {
+                        name: "c".to_string(),
+                        scope: SymbolScope::LocalScope,
+                        index: 0,
+                    },
+                    Symbol {
+                        name: "d".to_string(),
+                        scope: SymbolScope::LocalScope,
+                        index: 1,
+                    },
+                ],
+            ),
+        ];
+        for (mut table, expected_symbols, expected_free_symbols) in tests {
+            for sym in &expected_symbols {
+                assert_eq!(Some(Rc::new(sym.clone())), table.resolve(&sym.name));
+            }
+
+            assert_eq!(expected_free_symbols.len(), table.free_symbols.len());
+            for (i, sym) in expected_free_symbols.iter().enumerate() {
+                assert_eq!(Rc::new(sym.clone()), table.free_symbols[i]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_define_and_resolve_function_name() {
+        let mut global = SymbolTable::new();
+        global.define_function_name("a");
+
+        let expected = Symbol {
+            name: "a".to_string(),
+            scope: SymbolScope::FunctionScope,
+            index: 3141592,
+        };
+
+        assert_eq!(Some(Rc::new(expected)), global.resolve("a"));
+    }
+
+    #[test]
+    fn test_shadowing_function_name() {
+        let mut global = SymbolTable::new();
+        global.define_function_name("a");
+        global.define("a");
+
+        let expected = Symbol {
+            name: "a".to_string(),
+            scope: SymbolScope::GlobalScope,
+            index: 0,
+        };
+
+        assert_eq!(Some(Rc::new(expected)), global.resolve("a"));
     }
 }

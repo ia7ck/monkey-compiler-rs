@@ -47,6 +47,7 @@ pub enum Expression {
         index: Box<Expression>,
     },
     FunctionLiteral {
+        name: String,
         parameters: Vec<Expression>,
         body: Box<Statement>,
     },
