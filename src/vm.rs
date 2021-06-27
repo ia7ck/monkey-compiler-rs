@@ -1269,7 +1269,7 @@ mod tests {
         }
         return fib(n - 1) + fib(n - 2);
     };
-    fib(20);
+    fib(35);
         "#;
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
