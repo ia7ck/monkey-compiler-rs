@@ -1263,13 +1263,15 @@ mod tests {
     let fib = fn(n) {
         if (n == 0) {
             return 0;
+        } else {
+            if (n == 1) {
+                return 1;
+            } else {
+                return fib(n - 1) + fib(n - 2);
+            }
         }
-        if (n == 1) {
-            return 1;
-        }
-        return fib(n - 1) + fib(n - 2);
     };
-    fib(20);
+    fib(35);
         "#;
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
