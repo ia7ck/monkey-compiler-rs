@@ -271,12 +271,9 @@ impl Compiler {
                     self.load_symbol(sym);
                 }
 
-                let compiled_function =
-                    CompiledFunctionObject(Rc::new(object::CompiledFunctionObject::new(
-                        Rc::new(instructions),
-                        num_locals,
-                        num_parameters,
-                    )));
+                let compiled_function = CompiledFunctionObject(
+                    object::CompiledFunctionObject::new(instructions, num_locals, num_parameters),
+                );
                 let operands = &[self.add_constant(compiled_function), num_free];
                 self.emit(OpClosure, operands);
             }

@@ -5,8 +5,6 @@ use crate::object;
 use crate::object::Object;
 use anyhow::{bail, ensure, Result};
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::rc::Rc;
 
 const STACK_SIZE: usize = 2048;
 const GLOBAL_SIZE: usize = 65536;
@@ -18,12 +16,12 @@ const NULL: Object = Object::Null;
 const DUMMY: Object = Object::Dummy;
 
 pub struct VM {
-    constants: Vec<Rc<Object>>,
+    constants: Vec<Object>,
 
-    stack: Vec<Rc<Object>>,
+    stack: Vec<Object>,
     sp: usize,
 
-    globals: Vec<Rc<Object>>,
+    globals: Vec<Object>,
 
     frames: Vec<Frame>,
     frames_index: usize,
@@ -31,59 +29,52 @@ pub struct VM {
 
 impl VM {
     pub fn new(bytecode: Bytecode) -> Self {
-        let constants = bytecode.constants.into_iter().map(Rc::new).collect();
+        let constants = bytecode.constants.into_iter().collect();
         let mut frames = vec![
             Frame::new(
-                Rc::new(object::Closure::new(
-                    Rc::new(object::CompiledFunctionObject::new(
-                        Rc::new(Instructions::new()),
-                        0,
-                        0
-                    )),
+                object::Closure::new(
+                    object::CompiledFunctionObject::new(Instructions::new(), 0, 0),
                     vec![]
-                )),
+                ),
                 0
             );
             MAX_FRAME
         ];
         let main_closure = object::Closure::new(
-            Rc::new(object::CompiledFunctionObject::new(
-                Rc::new(bytecode.instructions),
-                0,
-                0,
-            )),
+            object::CompiledFunctionObject::new(bytecode.instructions, 0, 0),
             vec![],
         );
-        frames[0] = Frame::new(Rc::new(main_closure), 0);
+        frames[0] = Frame::new(main_closure, 0);
         Self {
             constants,
-            stack: vec![Rc::new(DUMMY); STACK_SIZE],
+            stack: vec![DUMMY; STACK_SIZE],
             sp: 0,
-            globals: vec![Rc::new(DUMMY); GLOBAL_SIZE],
+            globals: vec![DUMMY; GLOBAL_SIZE],
             frames,
             frames_index: 1,
         }
     }
     pub fn new_with_global_store(bytecode: Bytecode, globals: &[Object]) -> Self {
         let mut machine = VM::new(bytecode);
-        machine.globals = globals.iter().map(|g| Rc::new(g.clone())).collect();
+        machine.globals = globals.to_vec();
         machine
     }
-    pub fn last_popped_stack_elem(&self) -> Rc<Object> {
-        Rc::clone(&self.stack[self.sp])
+    pub fn last_popped_stack_elem(&self) -> &Object {
+        &self.stack[self.sp]
     }
-    fn push(&mut self, obj: Rc<Object>) -> Result<()> {
+    fn push(&mut self, obj: Object) -> Result<()> {
         if self.sp >= STACK_SIZE {
             bail!("stack overflow");
         }
-        debug_assert_ne!(obj, Rc::new(DUMMY));
+        debug_assert_ne!(obj, DUMMY);
         self.stack[self.sp] = obj;
         self.sp += 1;
         Ok(())
     }
-    fn pop(&mut self) -> Rc<Object> {
-        let obj = Rc::clone(&self.stack[self.sp - 1]);
-        debug_assert_ne!(obj, Rc::new(DUMMY));
+    fn pop(&mut self) -> Object {
+        let mut obj = DUMMY;
+        std::mem::swap(&mut obj, &mut self.stack[self.sp - 1]);
+        debug_assert_ne!(obj, DUMMY);
         self.sp -= 1;
         obj
     }
@@ -98,7 +89,7 @@ impl VM {
                 OpConstant => {
                     let const_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     // opcode (1 byte) + operand (2 byte)
-                    let obj = Rc::clone(&self.constants[const_index]);
+                    let obj = self.constants[const_index].clone();
                     self.push(obj)?;
                     self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
@@ -111,11 +102,11 @@ impl VM {
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpTrue => {
-                    self.push(Rc::new(TRUE))?;
+                    self.push(TRUE)?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpFalse => {
-                    self.push(Rc::new(FALSE))?;
+                    self.push(FALSE)?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpEqual | OpNotEqual | OpGreaterThan => {
@@ -145,12 +136,12 @@ impl VM {
                     self.current_frame_mut().update_ip(pos);
                 }
                 OpNull => {
-                    self.push(Rc::new(NULL))?;
+                    self.push(NULL)?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
                 OpGetGlobal => {
                     let global_index = read_uint16(instructions.rest(ip + 1)) as usize;
-                    let obj = Rc::clone(&self.globals[global_index]);
+                    let obj = self.globals[global_index].clone();
                     self.push(obj)?;
                     self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
@@ -168,7 +159,7 @@ impl VM {
                         elements.push(e);
                     }
                     elements.reverse();
-                    self.push(Rc::new(Object::ArrayObject(elements)))?;
+                    self.push(Object::ArrayObject(elements))?;
                     self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
                 OpHash => {
@@ -178,9 +169,9 @@ impl VM {
                         let value = self.pop();
                         let key = self.pop();
                         let h = key.calculate_hash()?;
-                        hash.insert(h, Rc::new(object::HashPair::new(key, value)));
+                        hash.insert(h, object::HashPair::new(key, value));
                     }
-                    self.push(Rc::new(Object::HashObject(hash)))?;
+                    self.push(Object::HashObject(hash))?;
                     self.current_frame_mut().update_ip(ip + 1 + 2);
                 }
                 OpIndex => {
@@ -191,8 +182,8 @@ impl VM {
                 }
                 OpCall => {
                     let num_arguments = read_uint8(instructions.rest(ip + 1)) as usize;
-                    let function_object = Rc::clone(&self.stack[self.sp - num_arguments - 1]);
-                    match function_object.deref() {
+                    let function_object = self.stack[self.sp - num_arguments - 1].clone();
+                    match function_object {
                         Object::ClosureObject(closure) => {
                             ensure!(
                                 closure.function().num_parameters() == num_arguments,
@@ -201,7 +192,7 @@ impl VM {
                                 num_arguments
                             );
                             self.current_frame_mut().update_ip(ip + 1 + 1);
-                            let frame = Frame::new(Rc::clone(closure), self.sp - num_arguments);
+                            let frame = Frame::new(closure.clone(), self.sp - num_arguments);
                             self.sp = frame.base_pointer() + closure.function().num_locals();
                             self.push_frame(frame);
                         }
@@ -214,7 +205,7 @@ impl VM {
                                     self.push(obj)?;
                                 }
                                 None => {
-                                    self.push(Rc::new(NULL))?;
+                                    self.push(NULL)?;
                                 }
                             }
                         }
@@ -238,7 +229,7 @@ impl VM {
                     let base_pointer = self.pop_frame().base_pointer();
                     self.sp = base_pointer - 1;
 
-                    self.push(Rc::new(NULL))?;
+                    self.push(NULL)?;
 
                     let ip = self.current_frame().ip();
                     self.current_frame_mut().update_ip(ip);
@@ -246,7 +237,7 @@ impl VM {
                 OpGetLocal => {
                     let local_index = read_uint8(instructions.rest(ip + 1)) as usize;
                     let base_pointer = self.current_frame().base_pointer();
-                    self.push(Rc::clone(&self.stack[base_pointer + local_index]))?;
+                    self.push(self.stack[base_pointer + local_index].clone())?;
                     self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
                 OpSetLocal => {
@@ -258,22 +249,22 @@ impl VM {
                 OpGetBuiltin => {
                     let builtin_index = read_uint8(instructions.rest(ip + 1)) as usize;
                     let builtin = object::BUILTINS[builtin_index];
-                    self.push(Rc::new(Object::BuiltinFunction(builtin)))?;
+                    self.push(Object::BuiltinFunction(builtin))?;
                     self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
                 OpClosure => {
                     let const_index = read_uint16(instructions.rest(ip + 1)) as usize;
                     let num_free = read_uint8(instructions.rest(ip + 3)) as usize;
 
-                    match self.constants[const_index].deref() {
+                    match &self.constants[const_index] {
                         Object::CompiledFunctionObject(func) => {
                             let mut free = Vec::new();
                             for i in 0..num_free {
-                                free.push(Rc::clone(&self.stack[self.sp - num_free + i]));
+                                free.push(self.stack[self.sp - num_free + i].clone());
                             }
                             self.sp -= num_free;
-                            let closure = object::Closure::new(Rc::clone(func), free);
-                            self.push(Rc::new(Object::ClosureObject(Rc::new(closure))))?;
+                            let closure = object::Closure::new(func.clone(), free);
+                            self.push(Object::ClosureObject(closure))?;
                         }
                         obj => {
                             bail!("not a function: {}", obj);
@@ -286,13 +277,14 @@ impl VM {
                     let free_index = read_uint8(instructions.rest(ip + 1)) as usize;
 
                     let current_closure = self.current_frame().closure();
-                    self.push(Rc::clone(&current_closure.free()[free_index]))?;
+                    let free = current_closure.free()[free_index].clone();
+                    self.push(free)?;
 
                     self.current_frame_mut().update_ip(ip + 1 + 1);
                 }
                 OpCurrentClosure => {
-                    let current_closure = self.current_frame().closure();
-                    self.push(Rc::new(Object::ClosureObject(Rc::clone(&current_closure))))?;
+                    let current_closure = self.current_frame().closure().clone();
+                    self.push(Object::ClosureObject(current_closure))?;
                     self.current_frame_mut().update_ip(ip + 1);
                 }
             }
@@ -303,9 +295,9 @@ impl VM {
         use Object::*;
         let right = self.pop();
         let left = self.pop();
-        match (left.deref(), right.deref()) {
+        match (left, right) {
             (Integer(left), Integer(right)) => {
-                self.execute_binary_integer_operation(op, *left, *right)?;
+                self.execute_binary_integer_operation(op, left, right)?;
             }
             (MonkeyString(left), MonkeyString(right)) => {
                 self.execute_binary_string_operation(op, left, right)?;
@@ -334,7 +326,7 @@ impl VM {
             OpDiv => left / right,
             _ => bail!("unknown integer operator: {:?}", op),
         };
-        self.push(Rc::new(Object::Integer(result)))?;
+        self.push(Object::Integer(result))?;
         Ok(())
     }
     fn execute_comparison(&mut self, op: Opcode) -> Result<()> {
@@ -342,9 +334,9 @@ impl VM {
         use Opcode::*;
         let right = self.pop();
         let left = self.pop();
-        match (op, left.deref(), right.deref()) {
+        match (op, left, right) {
             (op, Integer(left), Integer(right)) => {
-                self.execute_integer_comparison(op, *left, *right)?;
+                self.execute_integer_comparison(op, left, right)?;
             }
             (op, left, right) if op == OpEqual => {
                 self.push(Self::native_bool_to_boolean_object(left == right))?;
@@ -377,9 +369,9 @@ impl VM {
     fn execute_minus_operator(&mut self) -> Result<()> {
         use Object::*;
         let operand = self.pop();
-        match *operand {
+        match operand {
             Integer(value) => {
-                self.push(Rc::new(Integer(-value)))?;
+                self.push(Integer(-value))?;
             }
             _ => {
                 bail!("unsupported type for negation: {}", operand.r#type());
@@ -390,19 +382,19 @@ impl VM {
     fn execute_bang_operator(&mut self) -> Result<()> {
         use Object::*;
         let operand = self.pop();
-        match *operand {
+        match operand {
             Boolean(value) => {
                 if value {
-                    self.push(Rc::new(FALSE))?;
+                    self.push(FALSE)?;
                 } else {
-                    self.push(Rc::new(TRUE))?;
+                    self.push(TRUE)?;
                 }
             }
             Null => {
-                self.push(Rc::new(TRUE))?;
+                self.push(TRUE)?;
             }
             _ => {
-                self.push(Rc::new(FALSE))?;
+                self.push(FALSE)?;
             }
         }
         Ok(())
@@ -410,8 +402,8 @@ impl VM {
     fn execute_binary_string_operation(
         &mut self,
         op: Opcode,
-        left: &str,
-        right: &str,
+        left: String,
+        right: String,
     ) -> Result<()> {
         let result = match op {
             Opcode::OpAdd => format!("{}{}", left, right),
@@ -419,45 +411,45 @@ impl VM {
                 bail!("unknown string operator: {:?}", op);
             }
         };
-        self.push(Rc::new(Object::MonkeyString(result)))?;
+        self.push(Object::MonkeyString(result))?;
         Ok(())
     }
-    fn execute_index_expression(&mut self, left: Rc<Object>, index: Rc<Object>) -> Result<()> {
+    fn execute_index_expression(&mut self, left: Object, index: Object) -> Result<()> {
         use Object::{ArrayObject, HashObject, Integer};
-        match (left.deref(), index.deref()) {
-            (ArrayObject(elements), Integer(index)) => self.execute_array_index(elements, *index),
+        match (left, index) {
+            (ArrayObject(elements), Integer(index)) => self.execute_array_index(elements, index),
             (HashObject(hash), index) => self.execute_hash_index(hash, index),
             (left, _) => {
                 bail!("index operator not supported: {}", left.r#type());
             }
         }
     }
-    fn execute_array_index(&mut self, elements: &[Rc<Object>], index: i64) -> Result<()> {
+    fn execute_array_index(&mut self, elements: Vec<Object>, index: i64) -> Result<()> {
         if index < 0 {
-            self.push(Rc::new(NULL))?;
+            self.push(NULL)?;
             return Ok(());
         }
         match elements.get(index as usize) {
-            None => self.push(Rc::new(NULL)),
-            Some(e) => self.push(Rc::clone(e)),
+            None => self.push(NULL),
+            Some(e) => self.push(e.clone()),
         }
     }
     fn execute_hash_index(
         &mut self,
-        hash: &HashMap<u64, Rc<object::HashPair>>,
-        index: &Object,
+        hash: HashMap<u64, object::HashPair>,
+        index: Object,
     ) -> Result<()> {
         let key = index.calculate_hash()?;
         match hash.get(&key) {
-            None => self.push(Rc::new(NULL)),
-            Some(pair) => self.push(pair.value()),
+            None => self.push(NULL),
+            Some(pair) => self.push(pair.value().clone()),
         }
     }
-    fn native_bool_to_boolean_object(value: bool) -> Rc<Object> {
+    fn native_bool_to_boolean_object(value: bool) -> Object {
         if value {
-            Rc::new(TRUE)
+            TRUE
         } else {
-            Rc::new(FALSE)
+            FALSE
         }
     }
     fn is_truthy(obj: &Object) -> bool {
@@ -468,10 +460,7 @@ impl VM {
         }
     }
     pub fn globals(self) -> Vec<Object> {
-        self.globals
-            .into_iter()
-            .map(|g| g.deref().clone())
-            .collect()
+        self.globals.into_iter().collect()
     }
     fn current_frame(&self) -> &Frame {
         &self.frames[self.frames_index - 1]
@@ -498,8 +487,6 @@ mod tests {
     use crate::vm::VM;
     use anyhow::{bail, ensure, Result};
     use std::collections::HashMap;
-    use std::ops::Deref;
-    use std::rc::Rc;
 
     #[test]
     fn test_integer_arithmetic() {
@@ -622,10 +609,7 @@ mod tests {
         let tests = tests
             .into_iter()
             .map(|(input, elements)| {
-                let elements = elements
-                    .into_iter()
-                    .map(|v| Rc::new(Object::Integer(v)))
-                    .collect();
+                let elements = elements.into_iter().map(|v| Object::Integer(v)).collect();
                 (input, Object::ArrayObject(elements))
             })
             .collect();
@@ -646,10 +630,7 @@ mod tests {
                     .map(|(k, v)| {
                         let k = Object::Integer(k);
                         let v = Object::Integer(v);
-                        (
-                            k.calculate_hash().unwrap(),
-                            Rc::new(HashPair::new(Rc::new(k), Rc::new(v))),
-                        )
+                        (k.calculate_hash().unwrap(), HashPair::new(k, v))
                     })
                     .collect();
                 (input, Object::HashObject(hash))
@@ -928,12 +909,12 @@ mod tests {
             ("last([]);", Object::Null),
             (
                 "rest([1, 2, 3]);",
-                Object::ArrayObject(vec![Rc::new(int!(2)), Rc::new(int!(3))]),
+                Object::ArrayObject(vec![int!(2), int!(3)]),
             ),
             ("rest([]);", Object::Null),
             (
                 "push([1, 2], 3);",
-                Object::ArrayObject(vec![Rc::new(int!(1)), Rc::new(int!(2)), Rc::new(int!(3))]),
+                Object::ArrayObject(vec![int!(1), int!(2), int!(3)]),
             ),
         ];
         run_vm_tests(tests);
@@ -1096,7 +1077,7 @@ mod tests {
         run_vm_tests(tests);
     }
 
-    fn execute(input: &str) -> Result<Rc<Object>> {
+    fn execute(input: &str) -> Result<Object> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse().unwrap();
@@ -1105,7 +1086,7 @@ mod tests {
         let bytecode = compiler.bytecode();
         let mut vm = VM::new(bytecode);
         vm.run()?;
-        Ok(vm.last_popped_stack_elem())
+        Ok(vm.last_popped_stack_elem().clone())
     }
 
     fn run_vm_tests(tests: Vec<(&'static str, Object)>) {
@@ -1203,7 +1184,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_array_object(expected: &Vec<Rc<Object>>, actual: &Object) -> Result<()> {
+    fn test_array_object(expected: &Vec<Object>, actual: &Object) -> Result<()> {
         match actual {
             Object::ArrayObject(elements) => {
                 ensure!(
@@ -1227,7 +1208,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_hash_object(expected: &HashMap<u64, Rc<HashPair>>, actual: &Object) -> Result<()> {
+    fn test_hash_object(expected: &HashMap<u64, HashPair>, actual: &Object) -> Result<()> {
         match actual {
             Object::HashObject(hash) => {
                 ensure!(
@@ -1242,10 +1223,7 @@ mod tests {
                             bail!("no pair for given key in pairs");
                         }
                         Some(actual_pair) => {
-                            test_expected_object(
-                                expected_pair.value().deref(),
-                                actual_pair.value().deref(),
-                            );
+                            test_expected_object(expected_pair.value(), actual_pair.value());
                         }
                     }
                 }
