@@ -7,21 +7,19 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
-use std::ops::Deref;
-use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HashPair {
-    key: Rc<Object>,
-    value: Rc<Object>,
+    key: Object,
+    value: Object,
 }
 
 impl HashPair {
-    pub fn new(key: Rc<Object>, value: Rc<Object>) -> Self {
+    pub fn new(key: Object, value: Object) -> Self {
         Self { key, value }
     }
-    pub fn value(&self) -> Rc<Object> {
-        Rc::clone(&self.value)
+    pub fn value(&self) -> &Object {
+        &self.value
     }
 }
 
@@ -30,11 +28,11 @@ pub enum Object {
     Integer(i64),
     MonkeyString(String),
     Boolean(bool),
-    ArrayObject(Vec<Rc<Object>>),
-    HashObject(HashMap<u64, Rc<HashPair>>),
-    CompiledFunctionObject(Rc<CompiledFunctionObject>),
+    ArrayObject(Vec<Object>),
+    HashObject(HashMap<u64, HashPair>),
+    CompiledFunctionObject(CompiledFunctionObject),
     BuiltinFunction(Builtin),
-    ClosureObject(Rc<Closure>),
+    ClosureObject(Closure),
     Null,
     Dummy,
 }
@@ -119,21 +117,21 @@ impl Display for Object {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledFunctionObject {
-    instructions: Rc<Instructions>,
+    instructions: Instructions,
     num_locals: usize,
     num_parameters: usize,
 }
 
 impl CompiledFunctionObject {
-    pub fn new(instructions: Rc<Instructions>, num_locals: usize, num_parameters: usize) -> Self {
+    pub fn new(instructions: Instructions, num_locals: usize, num_parameters: usize) -> Self {
         Self {
             instructions,
             num_locals,
             num_parameters,
         }
     }
-    pub fn instructions(&self) -> Rc<Instructions> {
-        Rc::clone(&self.instructions)
+    pub fn instructions(&self) -> &Instructions {
+        &self.instructions
     }
     pub fn num_locals(&self) -> usize {
         self.num_locals
@@ -169,7 +167,7 @@ impl Builtin {
             Builtin::Push => "push",
         }
     }
-    pub fn call(&self, arguments: &[Rc<Object>]) -> Result<Option<Rc<Object>>> {
+    pub fn call(&self, arguments: &[Object]) -> Result<Option<Object>> {
         match self {
             Builtin::Len => {
                 ensure!(
@@ -177,9 +175,9 @@ impl Builtin {
                     "wrong number of arguments. got={}, want=1",
                     arguments.len()
                 );
-                match arguments[0].deref() {
-                    Object::MonkeyString(s) => Ok(Some(Rc::new(Object::Integer(s.len() as i64)))),
-                    Object::ArrayObject(a) => Ok(Some(Rc::new(Object::Integer(a.len() as i64)))),
+                match &arguments[0] {
+                    Object::MonkeyString(s) => Ok(Some(Object::Integer(s.len() as i64))),
+                    Object::ArrayObject(a) => Ok(Some(Object::Integer(a.len() as i64))),
                     obj => {
                         bail!("argument to `len` not supported, got {}", obj.r#type());
                     }
@@ -197,10 +195,10 @@ impl Builtin {
                     "wrong number of arguments. got={}, want=1",
                     arguments.len()
                 );
-                match arguments[0].deref() {
+                match &arguments[0] {
                     Object::ArrayObject(a) => {
                         if let Some(first) = a.first() {
-                            Ok(Some(Rc::clone(first)))
+                            Ok(Some(first.clone()))
                         } else {
                             Ok(None)
                         }
@@ -216,10 +214,10 @@ impl Builtin {
                     "wrong number of arguments. got={}, want=1",
                     arguments.len()
                 );
-                match arguments[0].deref() {
+                match &arguments[0] {
                     Object::ArrayObject(a) => {
                         if let Some(last) = a.last() {
-                            Ok(Some(Rc::clone(last)))
+                            Ok(Some(last.clone()))
                         } else {
                             Ok(None)
                         }
@@ -235,13 +233,13 @@ impl Builtin {
                     "wrong number of arguments. got={}, want=1",
                     arguments.len()
                 );
-                match arguments[0].deref() {
+                match &arguments[0] {
                     Object::ArrayObject(a) => {
                         if a.is_empty() {
                             Ok(None)
                         } else {
-                            let rest: Vec<Rc<Object>> = a[1..].iter().map(Rc::clone).collect();
-                            Ok(Some(Rc::new(Object::ArrayObject(rest))))
+                            let rest: Vec<Object> = a[1..].to_vec();
+                            Ok(Some(Object::ArrayObject(rest)))
                         }
                     }
                     obj => {
@@ -255,11 +253,11 @@ impl Builtin {
                     "wrong number of arguments. got={}, want=2",
                     arguments.len()
                 );
-                match arguments[0].deref() {
+                match &arguments[0] {
                     Object::ArrayObject(a) => {
-                        let mut elements: Vec<Rc<Object>> = a.iter().map(Rc::clone).collect();
-                        elements.push(Rc::clone(&arguments[1]));
-                        Ok(Some(Rc::new(Object::ArrayObject(elements))))
+                        let mut elements: Vec<Object> = a.to_vec();
+                        elements.push(arguments[1].clone());
+                        Ok(Some(Object::ArrayObject(elements)))
                     }
                     obj => {
                         bail!("argument to `push` must be ARRAY, got {}", obj.r#type());
@@ -272,18 +270,18 @@ impl Builtin {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Closure {
-    function: Rc<CompiledFunctionObject>,
-    free: Vec<Rc<Object>>,
+    function: CompiledFunctionObject,
+    free: Vec<Object>,
 }
 
 impl Closure {
-    pub fn new(function: Rc<CompiledFunctionObject>, free: Vec<Rc<Object>>) -> Self {
+    pub fn new(function: CompiledFunctionObject, free: Vec<Object>) -> Self {
         Self { function, free }
     }
-    pub fn function(&self) -> Rc<CompiledFunctionObject> {
-        Rc::clone(&self.function)
+    pub fn function(&self) -> &CompiledFunctionObject {
+        &self.function
     }
-    pub fn free(&self) -> &Vec<Rc<Object>> {
+    pub fn free(&self) -> &Vec<Object> {
         &self.free
     }
 }
