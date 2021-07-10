@@ -1,11 +1,11 @@
 mod ast;
 mod code;
-mod compiler;
+pub mod compiler;
 mod frame;
-mod lexer;
+pub mod lexer;
 mod object;
-mod parser;
+pub mod parser;
 pub mod repl;
 mod symbol_table;
 mod token;
-mod vm;
+pub mod vm;
