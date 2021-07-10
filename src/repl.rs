@@ -48,7 +48,7 @@ pub fn start() {
                 let mut machine = VM::new_with_global_store(bytecode, &globals);
                 let result = machine
                     .run()
-                    .map(|()| machine.last_popped_stack_elem())
+                    .map(|()| machine.last_popped_stack_elem().clone())
                     .map_err(|err| format!("executing bytecode failed:\n {:?}", err));
                 globals = machine.globals();
                 result
